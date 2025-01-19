@@ -6,6 +6,7 @@ import { Messages, Org } from '@salesforce/core';
 import csvParser from 'csv-parser';
 import axios from 'axios';
 import pLimit from 'p-limit';
+import { SingleBar, Presets } from 'cli-progress';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('file-export', 'file.export');
@@ -16,10 +17,7 @@ type CSVRow = {
 
 type AxiosResponse = {
   data: Readable;
-};
-
-type CustomError = {
-  message: string;
+  headers: Record<string, string>;
 };
 
 export type FileExportResult = {
@@ -88,7 +86,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
           .then(() => {
             this.log('File export completed.');
           })
-          .catch((err: CustomError) => {
+          .catch((err: Error) => {
             this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
           });
       })
@@ -116,11 +114,32 @@ export default class FileExport extends SfCommand<FileExportResult> {
       const outputFilePath = path.join(outputDir, `${contentVersionId}`);
       const writer: fs.WriteStream = fs.createWriteStream(outputFilePath);
 
+      const totalLength = parseInt(response.headers['content-length'], 10);
+
+      // Initialize the progress bar
+      const progressBar = new SingleBar(
+        {
+          format: 'Downloading {bar} {percentage}% | ETA: {eta}s | {value}/{total} bytes',
+          hideCursor: true,
+        },
+        Presets.shades_classic
+      );
+
+      // Start the progress bar
+      progressBar.start(totalLength, 0);
+
+      // Update progress bar as data chunks are received
+      response.data.on('data', (chunk: Buffer) => {
+        progressBar.increment(chunk.length);
+      });
+
       await new Promise((resolve, reject) => {
         response.data.pipe(writer);
         writer.on('finish', resolve);
         writer.on('error', reject);
       });
+
+      progressBar.stop();
 
       this.log(`Downloaded: ${outputFilePath}`);
     } catch (error) {
