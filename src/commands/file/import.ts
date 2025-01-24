@@ -7,7 +7,7 @@ import FormData from 'form-data';
 import pLimit from 'p-limit';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
-const messages = Messages.loadMessages('file-export', 'file.export');
+const messages = Messages.loadMessages('file-export', 'file.import');
 
 type CSVRow = {
   VersionData: string;

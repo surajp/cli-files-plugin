@@ -76,35 +76,41 @@ export default class FileExport extends SfCommand<FileExportResult> {
     const limit = pLimit(concurrency);
 
     const tasks: Array<Promise<void>> = [];
-    fs.createReadStream(csvFilePath)
-      .pipe(csvParser())
-      .on('data', (row: CSVRow) => {
-        tasks.push(limit(() => this.processRow(row, outputDir)));
-      })
-      .on('end', () => {
-        Promise.all(tasks)
-          .then(() => {
-            this.log('File export completed.');
-          })
-          .catch((err: Error) => {
-            this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
-          });
-      })
-      .on('error', (err) => {
-        this.error(`Failed to read CSV file: ${err.message}`);
-      });
-
-    return { message: 'File export started.' };
+    return new Promise((resolve, reject) => {
+      fs.createReadStream(csvFilePath)
+        .pipe(csvParser())
+        .on('data', (row: CSVRow) => {
+          this.log('Processing first row:', row);
+          tasks.push(limit(() => this.processRow(row, outputDir)));
+        })
+        .on('end', () => {
+          Promise.all(tasks)
+            .then(() => {
+              this.log('File export completed.');
+              resolve({ message: 'File export completed.' } as FileExportResult);
+            })
+            .catch((err: Error) => {
+              this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
+              reject(err as FileExportResult);
+            });
+        })
+        .on('error', (err) => {
+          this.error(`Failed to read CSV file: ${err.message}`);
+          reject(err);
+        });
+    });
   }
 
   private async processRow(row: CSVRow, outputDir: string): Promise<void> {
+    let fileUrl = '';
     try {
+      this.log('Processing row:', row);
       const contentVersionId = row.Id;
       const conn = this.targetOrg.getConnection(this.apiVersion);
       if (!this.apiVersion) {
         this.apiVersion = conn.getApiVersion();
       }
-      const fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/sobjects/ContentVersion/${contentVersionId}/VersionData`;
+      fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/sobjects/ContentVersion/${contentVersionId}/VersionData`;
 
       const response: AxiosResponse = await axios.get(fileUrl, {
         headers: { Authorization: `Bearer ${conn.accessToken}` },
@@ -115,6 +121,16 @@ export default class FileExport extends SfCommand<FileExportResult> {
       const writer: fs.WriteStream = fs.createWriteStream(outputFilePath);
 
       const totalLength = parseInt(response.headers['content-length'], 10);
+
+      if (totalLength && isNaN(totalLength)) {
+        this.log(
+          'Skipping download of ContentVersion ID',
+          contentVersionId,
+          'because content-length is invalid',
+          totalLength
+        );
+        return;
+      }
 
       // Initialize the progress bar
       const progressBar = new SingleBar(
@@ -143,7 +159,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
 
       this.log(`Downloaded: ${outputFilePath}`);
     } catch (error) {
-      this.error(`Failed to process ContentVersion ID ${row.Id}: ${(error as Error).message}`);
+      this.error(`Failed to process ContentVersion ID ${row.Id}: ${(error as Error).message}: ${fileUrl}`);
     }
   }
 }
