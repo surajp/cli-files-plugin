@@ -4,7 +4,7 @@ import { Messages, Org } from '@salesforce/core';
 import csvParser from 'csv-parser';
 import axios from 'axios';
 import FormData from 'form-data';
-import pLimit from 'p-limit';
+// import pLimit from 'p-limit';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('file-export', 'file.import');
@@ -16,6 +16,11 @@ type CSVRow = {
 
 export type FileImportResult = {
   message: string;
+};
+
+type AxiosResponse = {
+  data: string;
+  headers: Record<string, string>;
 };
 
 export default class FileImport extends SfCommand<FileImportResult> {
@@ -43,6 +48,8 @@ export default class FileImport extends SfCommand<FileImportResult> {
   protected static requiresUsername = true;
   private targetOrg!: Org;
   private apiVersion!: string;
+  private rows: CSVRow[] = [];
+  private totalSize: number = 0;
 
   public async run(): Promise<FileImportResult> {
     const { flags } = await this.parse(FileImport);
@@ -51,19 +58,27 @@ export default class FileImport extends SfCommand<FileImportResult> {
     if (flags['api-version']) {
       this.apiVersion = flags['api-version'];
     }
-    const concurrency = flags.concurrency;
+    // const concurrency = flags.concurrency;
 
-    const limit = pLimit(concurrency);
+    // const limit = pLimit(concurrency);
 
     const tasks: Array<Promise<void>> = [];
     return new Promise((resolve, reject) => {
       fs.createReadStream(csvFilePath)
         .pipe(csvParser())
         .on('data', (row: CSVRow) => {
-          this.log('Processing first row:', row);
-          tasks.push(limit(() => this.processRow(row)));
+          this.log('Processing row:', row.Title);
+          this.addToCollection(row);
+          if (this.totalSize > 30000000) {
+            tasks.push(this.processRows(this.rows));
+            this.rows = [];
+            this.totalSize = 0;
+          }
         })
         .on('end', () => {
+          if (this.rows.length > 0) {
+            tasks.push(this.processRows(this.rows));
+          }
           Promise.all(tasks)
             .then(() => {
               this.log('File export completed.');
@@ -81,28 +96,43 @@ export default class FileImport extends SfCommand<FileImportResult> {
     });
   }
 
-  private async processRow(row: CSVRow): Promise<void> {
+  private addToCollection(row: CSVRow): void {
+    this.rows.push(row);
+    this.totalSize += fs.statSync(row.VersionData).size;
+  }
+
+  private async processRows(rows: CSVRow[]): Promise<void> {
     let fileUrl = '';
     try {
-      this.log('Processing row:', row);
       const conn = this.targetOrg.getConnection(this.apiVersion);
       if (!this.apiVersion) {
         this.apiVersion = conn.getApiVersion();
       }
-      fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/sobjects/ContentVersion`;
+      fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/composite/sobjects`;
 
+      const records = [];
+      const binaryData = [];
+      for (const row of rows) {
+        const { VersionData, ...rest } = row;
+        const partName = 'FileData' + Math.random().toString(36).substring(7);
+        const attr = { type: 'ContentVersion', binaryPartName: partName, binaryPartNameAlias: 'VersionData' };
+        records.push({ attributes: attr, ...rest });
+        binaryData.push({ partName, VersionData, title: row.Title });
+      }
       const formData = new FormData();
-      const { VersionData, ...rest } = row;
-      formData.append('entity_content', JSON.stringify(rest), { contentType: 'application/json' });
-      formData.append('VersionData', fs.createReadStream(VersionData));
-
-      await axios.post(fileUrl, formData, {
+      formData.append('collection', JSON.stringify({ allOrNone: false, records }), { contentType: 'application/json' });
+      for (const data of binaryData) {
+        formData.append(data.partName, fs.createReadStream(data.VersionData), data.title);
+      }
+      const response: AxiosResponse = await axios.post(fileUrl, formData, {
         headers: { ...formData.getHeaders(), Authorization: `Bearer ${conn.accessToken}` },
+        responseType: 'json',
       });
 
-      this.log(`Uploaded: ${row.Title}`);
-    } catch (error) {
-      this.error(`Failed to process ContentVersion ${row.Title}: ${(error as Error).message}`);
+      this.log(`Response: ${JSON.stringify(response.data)}`);
+      this.log(`Uploaded: ${rows.length} files`);
+    } catch (err) {
+      this.log('Failed to process chunk', err);
     }
   }
 }
