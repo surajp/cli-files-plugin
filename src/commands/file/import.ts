@@ -16,6 +16,7 @@ type CSVRow = {
 
 export type FileImportResult = {
   message: string;
+  success?: boolean;
 };
 
 type AxiosResponse = {
@@ -35,12 +36,6 @@ export default class FileImport extends SfCommand<FileImportResult> {
       char: 'f',
       required: true,
     }),
-    concurrency: Flags.integer({
-      summary: messages.getMessage('flags.concurrency.summary'),
-      description: messages.getMessage('flags.concurrency.description'),
-      char: 'c',
-      default: 3,
-    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   };
@@ -49,11 +44,10 @@ export default class FileImport extends SfCommand<FileImportResult> {
   private targetOrg!: Org;
   private apiVersion!: string;
   private rows: CSVRow[] = [];
-  private totalSize: number = 0;
 
   public async run(): Promise<FileImportResult> {
     const { flags } = await this.parse(FileImport);
-    const csvFilePath = flags.file;
+    const csvFilePath: string = flags.file;
     this.targetOrg = flags['target-org'];
     if (flags['api-version']) {
       this.apiVersion = flags['api-version'];
@@ -62,17 +56,23 @@ export default class FileImport extends SfCommand<FileImportResult> {
 
     // const limit = pLimit(concurrency);
 
-    const tasks: Array<Promise<void>> = [];
+    let totalSize = 0;
+    let grandTotalSize = 0;
+
+    const tasks: Array<Promise<FileImportResult>> = [];
     return new Promise((resolve, reject) => {
       fs.createReadStream(csvFilePath)
         .pipe(csvParser())
         .on('data', (row: CSVRow) => {
           this.log('Processing row:', row.Title);
-          this.addToCollection(row);
-          if (this.totalSize > 30000000) {
+          this.rows.push(row);
+          const fileSize = fs.statSync(row.VersionData).size;
+          totalSize += fileSize;
+          grandTotalSize += fileSize;
+          if (totalSize > 30000000) {
             tasks.push(this.processRows(this.rows));
             this.rows = [];
-            this.totalSize = 0;
+            totalSize = 0;
           }
         })
         .on('end', () => {
@@ -81,7 +81,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
           }
           Promise.all(tasks)
             .then(() => {
-              this.log('File export completed.');
+              this.log('File import completed. total size:', grandTotalSize);
               resolve({ message: 'File export completed.' } as FileImportResult);
             })
             .catch((err: Error) => {
@@ -96,15 +96,11 @@ export default class FileImport extends SfCommand<FileImportResult> {
     });
   }
 
-  private addToCollection(row: CSVRow): void {
-    this.rows.push(row);
-    this.totalSize += fs.statSync(row.VersionData).size;
-  }
-
-  private async processRows(rows: CSVRow[]): Promise<void> {
+  private async processRows(rows: CSVRow[]): Promise<FileImportResult> {
     let fileUrl = '';
     try {
       const conn = this.targetOrg.getConnection(this.apiVersion);
+
       if (!this.apiVersion) {
         this.apiVersion = conn.getApiVersion();
       }
@@ -112,7 +108,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
 
       const records = [];
       const binaryData = [];
-      for (const row of rows) {
+      for (const row of this.rows) {
         const { VersionData, ...rest } = row;
         const partName = 'FileData' + Math.random().toString(36).substring(7);
         const attr = { type: 'ContentVersion', binaryPartName: partName, binaryPartNameAlias: 'VersionData' };
@@ -131,8 +127,11 @@ export default class FileImport extends SfCommand<FileImportResult> {
 
       this.log(`Response: ${JSON.stringify(response.data)}`);
       this.log(`Uploaded: ${rows.length} files`);
+      this.log('File import completed.');
+      return { message: 'File import completed.', success: true } as FileImportResult;
     } catch (err) {
       this.log('Failed to process chunk', err);
+      return { message: 'Failed to process chunk', success: false } as FileImportResult;
     }
   }
 }

@@ -69,18 +69,18 @@ export default class FileExport extends SfCommand<FileExportResult> {
     if (flags['api-version']) {
       this.apiVersion = flags['api-version'];
     }
+
     const concurrency = flags.concurrency;
     const outputDir = flags['output-dir'];
+    const limit = pLimit(concurrency);
+    const tasks: Array<Promise<void>> = [];
+
     FileExport.ensureOutputDirectory(outputDir);
 
-    const limit = pLimit(concurrency);
-
-    const tasks: Array<Promise<void>> = [];
     return new Promise((resolve, reject) => {
       fs.createReadStream(csvFilePath)
         .pipe(csvParser())
         .on('data', (row: CSVRow) => {
-          this.log('Processing first row:', row);
           tasks.push(limit(() => this.processRow(row, outputDir)));
         })
         .on('end', () => {
@@ -90,13 +90,13 @@ export default class FileExport extends SfCommand<FileExportResult> {
               resolve({ message: 'File export completed.' } as FileExportResult);
             })
             .catch((err: Error) => {
-              this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
               reject(err as FileExportResult);
+              this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
             });
         })
         .on('error', (err) => {
-          this.error(`Failed to read CSV file: ${err.message}`);
           reject(err);
+          this.error(`Failed to read CSV file: ${err.message}`);
         });
     });
   }
@@ -119,7 +119,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
 
       const outputFilePath = path.join(outputDir, `${contentVersionId}`);
       const writer: fs.WriteStream = fs.createWriteStream(outputFilePath);
-
       const totalLength = parseInt(response.headers['content-length'], 10);
 
       if (totalLength && isNaN(totalLength)) {
@@ -132,7 +131,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
         return;
       }
 
-      // Initialize the progress bar
       const progressBar = new SingleBar(
         {
           format: 'Downloading {bar} {percentage}% | ETA: {eta}s | {value}/{total} bytes',
@@ -141,23 +139,21 @@ export default class FileExport extends SfCommand<FileExportResult> {
         Presets.shades_classic
       );
 
-      // Start the progress bar
       progressBar.start(totalLength, 0);
 
-      // Update progress bar as data chunks are received
       response.data.on('data', (chunk: Buffer) => {
         progressBar.increment(chunk.length);
       });
 
-      await new Promise((resolve, reject) => {
-        response.data.pipe(writer);
-        writer.on('finish', resolve);
+      await new Promise<void>((resolve, reject) => {
+        writer.on('finish', () => {
+          resolve();
+          this.log(`Downloaded: ${outputFilePath}`);
+          progressBar.stop();
+        });
         writer.on('error', reject);
+        response.data.pipe(writer);
       });
-
-      progressBar.stop();
-
-      this.log(`Downloaded: ${outputFilePath}`);
     } catch (error) {
       this.error(`Failed to process ContentVersion ID ${row.Id}: ${(error as Error).message}: ${fileUrl}`);
     }

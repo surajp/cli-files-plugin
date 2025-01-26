@@ -1,10 +1,12 @@
 import fs from 'node:fs';
+import { PathLike } from 'node:fs';
 import { Readable } from 'node:stream';
 import { TestContext } from '@salesforce/core/testSetup';
 import { expect } from 'chai';
 import { stubSfCommandUx } from '@salesforce/sf-plugins-core';
 import sinon, { SinonStub } from 'sinon';
 import axios from 'axios';
+import { SingleBar } from 'cli-progress';
 import FileExport from '../../../src/commands/file/export.js';
 
 type AxiosResponse = {
@@ -15,9 +17,49 @@ type AxiosResponse = {
 describe('file export', () => {
   const $$: TestContext = new TestContext();
   let sfCommandStubs: ReturnType<typeof stubSfCommandUx>;
+  const csvData: string = 'Id\n12345\n67890';
+  let createReadStreamStub: SinonStub;
+  let writeStreamStub: SinonStub;
+  let axiosGetStub: SinonStub;
 
   beforeEach(() => {
     sfCommandStubs = stubSfCommandUx($$.SANDBOX);
+    createReadStreamStub = $$.SANDBOX.stub(fs, 'createReadStream').callsFake((path: PathLike) => {
+      expect(path).to.be.not.undefined;
+      const stream = new Readable({
+        read() {
+          this.push(Buffer.from(csvData));
+          this.push(null); // Signal end of stream
+        },
+      });
+      return stream as fs.ReadStream;
+    });
+
+    let finishCallback: () => void;
+    writeStreamStub = $$.SANDBOX.stub(fs, 'createWriteStream').returns({
+      on: sinon.stub().callsFake((event: string, callback: () => void) => {
+        if (event === 'finish') finishCallback = callback;
+      }),
+      write: sinon.stub(),
+      end: sinon.stub().callsFake(() => {
+        if (finishCallback) finishCallback();
+      }),
+      once: sinon.stub(),
+      emit: sinon.stub(),
+    } as unknown as fs.WriteStream);
+
+    axiosGetStub = $$.SANDBOX.stub(axios, 'get').callsFake((url: string) => {
+      expect(url).to.be.not.undefined;
+      return Promise.resolve({
+        data: new Readable({
+          read() {
+            this.push(Buffer.from('somedata'));
+            this.push(null); // Simulate end of stream
+          },
+        }),
+        headers: { 'content-length': '100' },
+      } as AxiosResponse);
+    });
   });
 
   afterEach(() => {
@@ -34,32 +76,6 @@ describe('file export', () => {
   });
 
   it('should process a valid CSV file and download files', async () => {
-    const csvData: Array<{ Id: string }> = [{ Id: '12345' }, { Id: '67890' }];
-    const createReadStreamStub: SinonStub = $$.SANDBOX.stub(fs, 'createReadStream').returns({
-      pipe: sinon.stub().callsFake((stream: Readable) => {
-        stream.emit('data', csvData[0]);
-        stream.emit('data', csvData[1]);
-        stream.emit('end');
-        return stream;
-      }),
-    } as unknown as fs.ReadStream);
-
-    const axiosGetStub: SinonStub = $$.SANDBOX.stub(axios, 'get').resolves({
-      data: new Readable({
-        read() {
-          this.push(null); // Simulate end of stream
-        },
-      }),
-      headers: { 'content-length': '100' },
-    } as AxiosResponse);
-
-    const writeStreamStub: SinonStub = $$.SANDBOX.stub(fs, 'createWriteStream').returns({
-      on: sinon.stub().callsFake((event: string, callback: () => void) => {
-        if (event === 'finish') callback();
-      }),
-      pipe: sinon.stub(),
-    } as unknown as fs.WriteStream);
-
     const flags = {
       file: './mock.csv',
       'output-dir': './output',
@@ -80,21 +96,17 @@ describe('file export', () => {
     ]);
 
     expect(createReadStreamStub.calledOnceWith(flags.file)).to.be.true;
-    expect(axiosGetStub.callCount).to.equal(csvData.length);
-    expect(writeStreamStub.callCount).to.equal(csvData.length);
+    expect(axiosGetStub.callCount, 'expected axios to be called twice').to.equal(2);
+    expect(writeStreamStub.callCount, 'expected write stream to be called twice').to.equal(2);
+    sfCommandStubs.log.getCalls().flatMap((call) => call.args.join('\n'));
   });
 
   it('should handle errors during file processing', async () => {
-    const csvData: Array<{ Id: string }> = [{ Id: '12345' }];
-    $$.SANDBOX.stub(fs, 'createReadStream').returns({
-      pipe: sinon.stub().callsFake((stream: Readable) => {
-        stream.emit('data', csvData[0]);
-        stream.emit('end');
-        return stream;
-      }),
-    } as unknown as fs.ReadStream);
-
-    $$.SANDBOX.stub(axios, 'get').rejects(new Error('Network error'));
+    axiosGetStub.restore();
+    $$.SANDBOX.stub(axios, 'get').callsFake((url: string) => {
+      expect(url).to.be.not.undefined;
+      return Promise.reject(new Error('Failed to download file'));
+    });
 
     const flags = {
       file: './mock.csv',
@@ -121,7 +133,7 @@ describe('file export', () => {
   });
 
   it('should fail when CSV file cannot be read', async () => {
-    const createReadStreamStub: SinonStub = $$.SANDBOX.stub(fs, 'createReadStream').throws(new Error('File not found'));
+    createReadStreamStub.throws(new Error('File not found'));
 
     const flags = {
       file: './nonexistent.csv',
@@ -145,35 +157,11 @@ describe('file export', () => {
     } catch (error) {
       expect((error as Error).message).to.include('File not found');
     }
-
     expect(createReadStreamStub.calledOnceWith(flags.file)).to.be.true;
   });
 
   it('should log progress and completion message', async () => {
-    const csvData: Array<{ Id: string }> = [{ Id: '12345' }];
-    const readStreamStub = $$.SANDBOX.stub(fs, 'createReadStream').returns({
-      pipe: (stream: Readable) => {
-        stream.emit('data', csvData[0]);
-        stream.emit('end');
-        return stream;
-      },
-    } as unknown as fs.ReadStream);
-
-    const axiosStub = $$.SANDBOX.stub(axios, 'get').resolves({
-      data: new Readable({
-        read() {
-          this.push(null); // Simulate end of stream
-        },
-      }),
-      headers: { 'content-length': '100' },
-    } as AxiosResponse);
-
-    $$.SANDBOX.stub(fs, 'createWriteStream').returns({
-      on: sinon.stub().callsFake((event: string, callback: () => void) => {
-        if (event === 'finish') callback();
-      }),
-      pipe: sinon.stub(),
-    } as unknown as fs.WriteStream);
+    const singleBarIncrement: SinonStub = $$.SANDBOX.stub(SingleBar.prototype, 'increment');
 
     await FileExport.run([
       '--file',
@@ -186,9 +174,9 @@ describe('file export', () => {
       'test-org',
     ]);
 
-    const outputLogs: string[] = sfCommandStubs.log.getCalls().flatMap((call) => call.args.join('\n'));
-    expect(outputLogs, 'expected output logs to include Processing first row').to.include('Processing first row');
-    expect(readStreamStub.callCount, 'expected read stream to be called once').to.equal(csvData.length);
-    expect(axiosStub.callCount, 'expected axios to be called once').to.equal(csvData.length);
+    const outputLogs: string[] = sfCommandStubs.log.getCalls().flatMap((call) => call.args as string[]);
+
+    expect(outputLogs, 'expected output logs to include Processing first row').to.include('Processing row:');
+    expect(singleBarIncrement.callCount, 'expected progress bar to be incremented').to.be.greaterThan(0);
   });
 });
