@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import { PathLike } from 'node:fs';
 import { Readable } from 'node:stream';
 import { TestContext } from '@salesforce/core/testSetup';
 import { expect } from 'chai';
@@ -31,7 +30,7 @@ describe('file import', () => {
   it('should import files', async () => {
     formDataAppendStub = $$.SANDBOX.stub(FormData.prototype, 'append');
 
-    $$.SANDBOX.stub(fs, 'createReadStream').callsFake((path: PathLike) => {
+    $$.SANDBOX.stub(fs, 'createReadStream').callsFake((path: fs.PathLike) => {
       expect(path).to.be.not.undefined;
       const stream = new Readable({
         read() {
@@ -42,7 +41,6 @@ describe('file import', () => {
       return stream as fs.ReadStream;
     });
 
-    // Stub axios.post to simulate API response
     const axiosPostStub: SinonStub = $$.SANDBOX.stub(axios, 'post').callsFake((url) => {
       expect(url).to.be.not.undefined;
       return Promise.resolve({
@@ -51,18 +49,15 @@ describe('file import', () => {
       } as AxiosResponse);
     });
 
-    // Stub fs.statSync to return a fixed file size
-    $$.SANDBOX.stub(fs, 'statSync').callsFake((path: PathLike) => {
+    $$.SANDBOX.stub(fs, 'statSync').callsFake((path: fs.PathLike) => {
       expect(path).to.be.not.undefined;
-      return { size: 100 } as fs.Stats; // Mocked size
+      return { size: 100 } as fs.Stats;
     });
 
-    // Run the command
     await FileImport.run(['--file', './mockFile.csv', '--target-org', 'mockOrg']);
 
-    // Assertions
     expect(axiosPostStub.called, 'expected post to be called').to.be.true;
-    expect(formDataAppendStub.callCount).to.be.greaterThan(0); // Ensure FormData.append was called
+    expect(formDataAppendStub.callCount).to.be.greaterThan(0);
     expect(sfCommandStubs.log.calledWith('File import completed.')).to.be.true;
   });
 });
