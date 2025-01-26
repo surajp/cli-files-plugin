@@ -80,7 +80,7 @@ describe('file export', () => {
       file: './mock.csv',
       'output-dir': './output',
       concurrency: 1,
-      'target-org': sinon.stub(),
+      'target-org': 'mockOrg',
       'api-version': undefined,
     };
 
@@ -92,7 +92,7 @@ describe('file export', () => {
       '--concurrency',
       `${flags.concurrency}`,
       '--target-org',
-      'test-org',
+      flags['target-org'],
     ]);
 
     expect(createReadStreamStub.calledOnceWith(flags.file)).to.be.true;
@@ -112,7 +112,7 @@ describe('file export', () => {
       file: './mock.csv',
       'output-dir': './output',
       concurrency: 1,
-      'target-org': sinon.stub(),
+      'target-org': 'mockOrg',
       'api-version': undefined,
     };
 
@@ -125,7 +125,7 @@ describe('file export', () => {
         '--concurrency',
         `${flags.concurrency}`,
         '--target-org',
-        'test-org',
+        flags['target-org'],
       ]);
     } catch (error) {
       expect((error as Error).message).to.include('Failed to process ContentVersion ID');
@@ -139,7 +139,7 @@ describe('file export', () => {
       file: './nonexistent.csv',
       'output-dir': './output',
       concurrency: 1,
-      'target-org': sinon.stub(),
+      'target-org': 'mockOrg',
       'api-version': undefined,
     };
 
@@ -152,7 +152,7 @@ describe('file export', () => {
         '--concurrency',
         `${flags.concurrency}`,
         '--target-org',
-        'test-org',
+        flags['target-org'],
       ]);
     } catch (error) {
       expect((error as Error).message).to.include('File not found');
@@ -171,12 +171,60 @@ describe('file export', () => {
       '--concurrency',
       '1',
       '--target-org',
-      'test-org',
+      'mockOrg',
     ]);
 
     const outputLogs: string[] = sfCommandStubs.log.getCalls().flatMap((call) => call.args as string[]);
 
     expect(outputLogs, 'expected output logs to include Processing first row').to.include('Processing row:');
     expect(singleBarIncrement.callCount, 'expected progress bar to be incremented').to.be.greaterThan(0);
+  });
+
+  it('should handle alternate ID field name', async () => {
+    const customIdColumn = 'customid';
+    const csvDataWithCustomId: string = `${customIdColumn},Id\n65432,11111\n54321,22222`; // csv data with both default and custom id fields. Only the custom id field should be used
+
+    createReadStreamStub.restore();
+    createReadStreamStub = $$.SANDBOX.stub(fs, 'createReadStream').callsFake((path: PathLike) => {
+      expect(path).to.be.not.undefined;
+      const stream = new Readable({
+        read() {
+          this.push(Buffer.from(csvDataWithCustomId));
+          this.push(null);
+        },
+      });
+      return stream as fs.ReadStream;
+    });
+
+    const flags = {
+      file: './mock.csv',
+      'output-dir': './output',
+      concurrency: 1,
+      'target-org': 'mockOrg',
+      'api-version': undefined,
+      id: customIdColumn,
+    };
+
+    await FileExport.run([
+      '--file',
+      flags.file,
+      '--output-dir',
+      flags['output-dir'],
+      '--concurrency',
+      `${flags.concurrency}`,
+      '--target-org',
+      flags['target-org'],
+      '--id',
+      flags.id,
+    ]);
+
+    expect(createReadStreamStub.calledOnceWith(flags.file)).to.be.true;
+    expect(axiosGetStub.callCount, 'expected axios to be called twice').to.equal(2);
+    const axiosUrlIds: string[] = axiosGetStub
+      .getCalls()
+      .map((call) => (call.args[0] as string).replace(/.*\/(.*\/VersionData)/, '$1')); // only get the id/VersionData from the url
+    expect(axiosUrlIds).to.include('65432/VersionData'); // ensure the id is being read from the custom field and passed to axios for fetching
+    expect(axiosUrlIds).to.not.include('11111/VersionData'); // ensure the default id field is not being used
+    expect(writeStreamStub.callCount, 'expected write stream to be called twice').to.equal(2);
   });
 });

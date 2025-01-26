@@ -30,6 +30,14 @@ The number of concurrent requests to make to the Salesforce API.
 
 More concurrent requests will be faster but may cause the Salesforce API to return errors and throttle system resources.
 
+# flags.id.summary
+
+Name of the column in the CSV file that contains the ContentVersion Ids.
+
+# flags.id.description
+
+Avoid spaces and special characters in the column name. The default value is `Id`.
+
 # examples
 
 - <%= config.bin %> <%= command.id %> --file contentversion-ids.csv

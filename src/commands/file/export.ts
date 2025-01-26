@@ -11,10 +11,6 @@ import { SingleBar, Presets } from 'cli-progress';
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('file-export', 'file.export');
 
-type CSVRow = {
-  Id: string;
-};
-
 type AxiosResponse = {
   data: Readable;
   headers: Record<string, string>;
@@ -48,6 +44,11 @@ export default class FileExport extends SfCommand<FileExportResult> {
       char: 'c',
       default: 3,
     }),
+    id: Flags.string({
+      summary: messages.getMessage('flags.id.summary'),
+      char: 'i',
+      default: 'Id',
+    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   };
@@ -55,6 +56,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
   protected static requiresUsername = true;
   private targetOrg!: Org;
   private apiVersion!: string;
+  private idFieldName!: string;
 
   private static ensureOutputDirectory(outputDir: string): void {
     if (!fs.existsSync(outputDir)) {
@@ -72,6 +74,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
 
     const concurrency = flags.concurrency;
     const outputDir = flags['output-dir'];
+    this.idFieldName = flags.id;
     const limit = pLimit(concurrency);
     const tasks: Array<Promise<void>> = [];
 
@@ -80,7 +83,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
     return new Promise((resolve, reject) => {
       fs.createReadStream(csvFilePath)
         .pipe(csvParser())
-        .on('data', (row: CSVRow) => {
+        .on('data', (row: Record<string, string>) => {
           tasks.push(limit(() => this.processRow(row, outputDir)));
         })
         .on('end', () => {
@@ -101,11 +104,11 @@ export default class FileExport extends SfCommand<FileExportResult> {
     });
   }
 
-  private async processRow(row: CSVRow, outputDir: string): Promise<void> {
+  private async processRow(row: Record<string, string>, outputDir: string): Promise<void> {
     let fileUrl = '';
     try {
       this.log('Processing row:', row);
-      const contentVersionId = row.Id;
+      const contentVersionId = row[this.idFieldName];
       const conn = this.targetOrg.getConnection(this.apiVersion);
       if (!this.apiVersion) {
         this.apiVersion = conn.getApiVersion();

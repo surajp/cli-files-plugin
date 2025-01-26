@@ -54,7 +54,13 @@ describe('file import', () => {
       return { size: 100 } as fs.Stats;
     });
 
-    await FileImport.run(['--file', './mockFile.csv', '--target-org', 'mockOrg']);
+    const flags = {
+      file: './mock.csv',
+      'output-dir': './output',
+      'target-org': 'mockOrg',
+    };
+
+    await FileImport.run(['--file', flags.file, '--target-org', flags['target-org']]);
 
     expect(axiosPostStub.called, 'expected post to be called').to.be.true;
     expect(formDataAppendStub.callCount).to.be.greaterThan(0);
