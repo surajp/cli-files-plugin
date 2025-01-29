@@ -1,4 +1,4 @@
-# file-export
+# Salesforce CLI File Operations Plugin
 
 [![NPM](https://img.shields.io/npm/v/file-export.svg?label=file-export)](https://www.npmjs.com/package/file-export) [![Downloads/week](https://img.shields.io/npm/dw/file-export.svg)](https://npmjs.org/package/file-export) [![License](https://img.shields.io/badge/License-BSD%203--Clause-brightgreen.svg)](https://raw.githubusercontent.com/salesforcecli/file-export/main/LICENSE.txt)
 
