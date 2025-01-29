@@ -1,6 +1,6 @@
 {
   "name": "fileops",
-  "description": "Export Salesforce files",
+  "description": "Export/Import Salesforce files",
   "version": "1.0.0",
   "dependencies": {
     "@oclif/core": "^4",
@@ -49,11 +49,8 @@
       "@oclif/plugin-help"
     ],
     "topics": {
-      "hello": {
-        "description": "Commands to say hello."
-      },
       "file": {
-        "description": "description for file"
+        "description": "Commands to export and import Salesforce files"
       }
     },
     "flexibleTaxonomy": true
