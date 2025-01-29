@@ -8,7 +8,7 @@ import axios from 'axios';
 import pLimit from 'p-limit';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
-const messages = Messages.loadMessages('fileops', 'file.export');
+const messages = Messages.loadMessages('@neatflow/fileops', 'file.export');
 
 type AxiosResponse = {
   data: Readable;

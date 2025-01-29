@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pLimit from 'p-limit';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
-const messages = Messages.loadMessages('fileops', 'file.import');
+const messages = Messages.loadMessages('@neatflow/fileops', 'file.import');
 
 type Result = {
   success: boolean;

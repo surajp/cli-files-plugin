@@ -5,7 +5,7 @@
 ## Install
 
 ```bash
-sf plugins install file-export@x.y.z
+sf plugins install @neatflow/fileops
 ```
 
 ## Issues
