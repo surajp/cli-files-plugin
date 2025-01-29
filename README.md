@@ -10,7 +10,7 @@ sf plugins install @neatflow/fileops
 
 ## Issues
 
-Please report any issues at https://github.com/forcedotcom/cli/issues
+Please report any issues at https://github.com/surajp/cli-files-plugin/issues
 
 ### Build
 
