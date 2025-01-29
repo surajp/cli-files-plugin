@@ -1,5 +1,4 @@
-import fs from 'node:fs';
-import { PathLike } from 'node:fs';
+import fs, { PathLike, Stats } from 'node:fs';
 import { Readable } from 'node:stream';
 import { TestContext } from '@salesforce/core/testSetup';
 import { expect } from 'chai';
@@ -24,6 +23,13 @@ describe('file export', () => {
 
   beforeEach(() => {
     sfCommandStubs = stubSfCommandUx($$.SANDBOX);
+
+    // this is needed for flag exists: true check to work with a mock file
+    $$.SANDBOX.stub(fs.promises, 'stat').resolves({
+      size: 100,
+      isFile: () => true,
+    } as Stats);
+
     createReadStreamStub = $$.SANDBOX.stub(fs, 'createReadStream').callsFake((path: PathLike) => {
       expect(path).to.be.not.undefined;
       const stream = new Readable({
@@ -176,7 +182,7 @@ describe('file export', () => {
 
     const outputLogs: string[] = sfCommandStubs.log.getCalls().flatMap((call) => call.args as string[]);
 
-    expect(outputLogs, 'expected output logs to include Processing first row').to.include('Processing row:');
+    expect(outputLogs.join('\n'), 'expected output logs to include Export complete').to.deep.include('Export complete');
     expect(singleBarIncrement.callCount, 'expected progress bar to be incremented').to.be.greaterThan(0);
   });
 
@@ -185,6 +191,7 @@ describe('file export', () => {
     const csvDataWithCustomId: string = `${customIdColumn},Id\n65432,11111\n54321,22222`; // csv data with both default and custom id fields. Only the custom id field should be used
 
     createReadStreamStub.restore();
+
     createReadStreamStub = $$.SANDBOX.stub(fs, 'createReadStream').callsFake((path: PathLike) => {
       expect(path).to.be.not.undefined;
       const stream = new Readable({

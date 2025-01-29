@@ -17,7 +17,8 @@ type AxiosResponse = {
 };
 
 export type FileExportResult = {
-  message: string;
+  successCount: number;
+  failureCount: number;
 };
 
 export default class FileExport extends SfCommand<FileExportResult> {
@@ -26,11 +27,12 @@ export default class FileExport extends SfCommand<FileExportResult> {
   public static readonly examples = messages.getMessages('examples');
 
   public static readonly flags = {
-    file: Flags.string({
+    file: Flags.file({
       summary: messages.getMessage('flags.file.summary'),
       description: messages.getMessage('flags.file.description'),
       char: 'f',
       required: true,
+      exists: true,
     }),
     'output-dir': Flags.directory({
       summary: messages.getMessage('flags.output-dir.summary'),
@@ -49,6 +51,11 @@ export default class FileExport extends SfCommand<FileExportResult> {
       char: 'i',
       default: 'Id',
     }),
+    'ext-col-name': Flags.string({
+      summary: messages.getMessage('flags.ext-col-name.summary'),
+      description: messages.getMessage('flags.ext-col-name.description'),
+      char: 'e',
+    }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
   };
@@ -57,6 +64,8 @@ export default class FileExport extends SfCommand<FileExportResult> {
   private targetOrg!: Org;
   private apiVersion!: string;
   private idFieldName!: string;
+  private extColName!: string;
+  private progressBar!: SingleBar;
 
   private static ensureOutputDirectory(outputDir: string): void {
     if (!fs.existsSync(outputDir)) {
@@ -68,97 +77,107 @@ export default class FileExport extends SfCommand<FileExportResult> {
     const { flags } = await this.parse(FileExport);
     const csvFilePath = flags.file;
     this.targetOrg = flags['target-org'];
-    if (flags['api-version']) {
-      this.apiVersion = flags['api-version'];
-    }
+    this.apiVersion = flags['api-version'] ?? this.targetOrg.getConnection().getApiVersion();
+    this.idFieldName = flags.id;
+    this.extColName = flags['ext-col-name'] ?? '';
 
     const concurrency = flags.concurrency;
-    const outputDir = flags['output-dir'];
-    this.idFieldName = flags.id;
+    const outputDir: string = flags['output-dir'];
     const limit = pLimit(concurrency);
     const tasks: Array<Promise<void>> = [];
 
     FileExport.ensureOutputDirectory(outputDir);
 
-    return new Promise((resolve, reject) => {
+    // Initialize progress bar
+    this.progressBar = new SingleBar(
+      {
+        format: 'Progress {bar} {percentage}% | ETA: {eta}s | {value}/{total} files',
+        hideCursor: true,
+      },
+      Presets.shades_classic
+    );
+
+    const thePromise: Promise<FileExportResult> = new Promise((resolve, reject) => {
+      let totalFiles = 0;
+
       fs.createReadStream(csvFilePath)
         .pipe(csvParser())
         .on('data', (row: Record<string, string>) => {
-          tasks.push(limit(() => this.processRow(row, outputDir)));
+          totalFiles++;
+          tasks.push(
+            limit(async () => {
+              try {
+                await this.processRow(row, outputDir);
+                this.progressBar.increment();
+              } catch (error) {
+                this.progressBar.increment();
+                this.error(`Error processing row: ${(error as Error).message}`);
+              }
+            })
+          );
         })
         .on('end', () => {
-          Promise.all(tasks)
-            .then(() => {
-              this.log('File export completed.');
-              resolve({ message: 'File export completed.' } as FileExportResult);
+          this.progressBar.start(totalFiles, 0);
+          Promise.allSettled(tasks)
+            .then((results) => {
+              this.progressBar.stop();
+              const successCount = results.filter((r) => r.status === 'fulfilled').length;
+              const failureCount = results.filter((r) => r.status === 'rejected').length;
+              this.log(`Export complete. ${successCount} files exported successfully, ${failureCount} files failed.`);
+              return { successCount, failureCount } as FileExportResult;
             })
-            .catch((err: Error) => {
-              reject(err as FileExportResult);
-              this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
+            .then((resp) => resolve(resp))
+            .catch((err) => {
+              this.progressBar.stop();
+              reject(err);
             });
         })
         .on('error', (err) => {
+          this.progressBar.stop();
           reject(err);
-          this.error(`Failed to read CSV file: ${err.message}`);
         });
     });
+
+    const result: FileExportResult = await thePromise;
+    return result;
   }
 
   private async processRow(row: Record<string, string>, outputDir: string): Promise<void> {
-    let fileUrl = '';
+    const contentVersionId = row[this.idFieldName];
+
     try {
-      this.log('Processing row:', row);
-      const contentVersionId = row[this.idFieldName];
-      const conn = this.targetOrg.getConnection(this.apiVersion);
-      if (!this.apiVersion) {
-        this.apiVersion = conn.getApiVersion();
+      let ext = this.extColName ? row[this.extColName] : '';
+      if (ext && ext.includes('.')) {
+        ext = ext.split('.').pop() as string;
       }
-      fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/sobjects/ContentVersion/${contentVersionId}/VersionData`;
+
+      if (!contentVersionId) {
+        this.error('Missing ContentVersion ID');
+      }
+
+      const conn = this.targetOrg.getConnection(this.apiVersion);
+      const fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/sobjects/ContentVersion/${contentVersionId}/VersionData`;
 
       const response: AxiosResponse = await axios.get(fileUrl, {
         headers: { Authorization: `Bearer ${conn.accessToken}` },
         responseType: 'stream',
       });
 
-      const outputFilePath = path.join(outputDir, `${contentVersionId}`);
-      const writer: fs.WriteStream = fs.createWriteStream(outputFilePath);
-      const totalLength = parseInt(response.headers['content-length'], 10);
-
-      if (totalLength && isNaN(totalLength)) {
-        this.log(
-          'Skipping download of ContentVersion ID',
-          contentVersionId,
-          'because content-length is invalid',
-          totalLength
-        );
-        return;
-      }
-
-      const progressBar = new SingleBar(
-        {
-          format: 'Downloading {bar} {percentage}% | ETA: {eta}s | {value}/{total} bytes',
-          hideCursor: true,
-        },
-        Presets.shades_classic
-      );
-
-      progressBar.start(totalLength, 0);
-
-      response.data.on('data', (chunk: Buffer) => {
-        progressBar.increment(chunk.length);
-      });
+      const fileName = ext ? `${contentVersionId}.${ext}` : contentVersionId;
+      const outputFilePath = path.join(outputDir, `${fileName}`);
+      const writer = fs.createWriteStream(outputFilePath);
 
       await new Promise<void>((resolve, reject) => {
-        writer.on('finish', () => {
-          resolve();
-          this.log(`Downloaded: ${outputFilePath}`);
-          progressBar.stop();
-        });
+        writer.on('finish', resolve);
         writer.on('error', reject);
         response.data.pipe(writer);
       });
-    } catch (error) {
-      this.error(`Failed to process ContentVersion ID ${row.Id}: ${(error as Error).message}: ${fileUrl}`);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        // we have to forcibly close the stream here or the process hangs if the download fails
+        (err.response as AxiosResponse)?.data?.destroy();
+      }
+      throw err;
     }
   }
 }

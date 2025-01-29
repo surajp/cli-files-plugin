@@ -1,27 +1,55 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
+import efs from 'node:fs';
+import path from 'node:path';
 import { SfCommand, Flags } from '@salesforce/sf-plugins-core';
 import { Messages, Org } from '@salesforce/core';
 import csvParser from 'csv-parser';
 import axios from 'axios';
 import FormData from 'form-data';
-// import pLimit from 'p-limit';
+import { v4 as uuidv4 } from 'uuid';
+import pLimit from 'p-limit';
+import { SingleBar, Presets } from 'cli-progress';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('file-export', 'file.import');
 
-type CSVRow = {
-  VersionData: string;
-  Title: string;
-} & Record<string, string>;
-
-export type FileImportResult = {
-  message: string;
-  success?: boolean;
+type Result = {
+  success: boolean;
+  id: string;
+  errors: string[];
 };
 
 type AxiosResponse = {
-  data: string;
+  data: Result[];
   headers: Record<string, string>;
+};
+
+type CSVRow = {
+  VersionData: string;
+  Title: string;
+  PathOnClient: string;
+} & Record<string, string>;
+
+type UploadResult = {
+  success: boolean;
+  title?: string;
+  error?: string;
+};
+
+export type FileImportResult = {
+  total: number;
+  success: number;
+  failures: UploadResult[];
+};
+
+type ContentVersionRequest = {
+  attributes: {
+    type: 'ContentVersion';
+    binaryPartName: string;
+    binaryPartNameAlias: string;
+  };
+  Title: string;
+  PathOnClient: string;
 };
 
 export default class FileImport extends SfCommand<FileImportResult> {
@@ -30,11 +58,22 @@ export default class FileImport extends SfCommand<FileImportResult> {
   public static readonly examples = messages.getMessages('examples');
 
   public static readonly flags = {
-    file: Flags.string({
+    file: Flags.file({
       summary: messages.getMessage('flags.file.summary'),
       description: messages.getMessage('flags.file.description'),
       char: 'f',
       required: true,
+      exists: true,
+    }),
+    'batch-size': Flags.integer({
+      summary: 'Maximum batch size in MB',
+      char: 'b',
+      default: 30,
+    }),
+    concurrency: Flags.integer({
+      summary: 'Number of parallel batches',
+      char: 'c',
+      default: 3,
     }),
     'target-org': Flags.requiredOrg(),
     'api-version': Flags.orgApiVersion(),
@@ -43,95 +82,180 @@ export default class FileImport extends SfCommand<FileImportResult> {
   protected static requiresUsername = true;
   private targetOrg!: Org;
   private apiVersion!: string;
-  private rows: CSVRow[] = [];
+  private progressBar!: SingleBar;
+
+  private static async createBatches(rows: CSVRow[], maxBatchSize: number): Promise<CSVRow[][]> {
+    const batches: CSVRow[][] = [];
+    let currentBatch: CSVRow[] = [];
+    let currentBatchSize = 0;
+
+    await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const fileStats = await fs.stat(row.VersionData);
+          const fileSize = fileStats.size;
+
+          if (fileSize + currentBatchSize > maxBatchSize) {
+            batches.push(currentBatch);
+            currentBatch = [];
+            currentBatchSize = 0;
+          }
+
+          currentBatch.push(row);
+          currentBatchSize += fileSize;
+        } catch (error) {
+          throw new Error(`Error processing file ${row.VersionData}: ${(error as Error).message}`);
+        }
+      })
+    );
+
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+    return batches;
+  }
 
   public async run(): Promise<FileImportResult> {
     const { flags } = await this.parse(FileImport);
-    const csvFilePath: string = flags.file;
     this.targetOrg = flags['target-org'];
-    if (flags['api-version']) {
-      this.apiVersion = flags['api-version'];
-    }
-    // const concurrency = flags.concurrency;
+    this.apiVersion = flags['api-version'] ?? this.targetOrg.getConnection().getApiVersion();
+    const batchSizeBytes = flags['batch-size'] * 1024 * 1024;
+    const concurrencyLimit = pLimit(flags.concurrency);
 
-    // const limit = pLimit(concurrency);
+    const csvFilePath = flags.file;
 
-    let totalSize = 0;
-    let grandTotalSize = 0;
+    this.progressBar = new SingleBar(
+      {
+        format: 'Uploading {bar} {percentage}% | {value}/{total} files',
+        hideCursor: true,
+      },
+      Presets.shades_classic
+    );
 
-    const tasks: Array<Promise<FileImportResult>> = [];
-    return new Promise((resolve, reject) => {
-      fs.createReadStream(csvFilePath)
-        .pipe(csvParser())
-        .on('data', (row: CSVRow) => {
-          this.log('Processing row:', row.Title);
-          this.rows.push(row);
-          const fileSize = fs.statSync(row.VersionData).size;
-          totalSize += fileSize;
-          grandTotalSize += fileSize;
-          if (totalSize > 30000000) {
-            tasks.push(this.processRows(this.rows));
-            this.rows = [];
-            totalSize = 0;
-          }
-        })
-        .on('end', () => {
-          if (this.rows.length > 0) {
-            tasks.push(this.processRows(this.rows));
-          }
-          Promise.all(tasks)
-            .then(() => {
-              this.log('File import completed. total size:', grandTotalSize);
-              resolve({ message: 'File export completed.' } as FileImportResult);
-            })
-            .catch((err: Error) => {
-              this.error(`Failed to process some ContentVersion IDs: ${err.message}`);
-              reject(err as FileImportResult);
-            });
-        })
-        .on('error', (err) => {
-          this.error(`Failed to read CSV file: ${err.message}`);
-          reject(err);
-        });
-    });
-  }
-
-  private async processRows(rows: CSVRow[]): Promise<FileImportResult> {
-    let fileUrl = '';
     try {
-      const conn = this.targetOrg.getConnection(this.apiVersion);
+      const rows: CSVRow[] = [];
 
-      if (!this.apiVersion) {
-        this.apiVersion = conn.getApiVersion();
-      }
-      fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/composite/sobjects`;
-
-      const records = [];
-      const binaryData = [];
-      for (const row of this.rows) {
-        const { VersionData, ...rest } = row;
-        const partName = 'FileData' + Math.random().toString(36).substring(7);
-        const attr = { type: 'ContentVersion', binaryPartName: partName, binaryPartNameAlias: 'VersionData' };
-        records.push({ attributes: attr, ...rest });
-        binaryData.push({ partName, VersionData, title: row.Title });
-      }
-      const formData = new FormData();
-      formData.append('collection', JSON.stringify({ allOrNone: false, records }), { contentType: 'application/json' });
-      for (const data of binaryData) {
-        formData.append(data.partName, fs.createReadStream(data.VersionData), data.title);
-      }
-      const response: AxiosResponse = await axios.post(fileUrl, formData, {
-        headers: { ...formData.getHeaders(), Authorization: `Bearer ${conn.accessToken}` },
-        responseType: 'json',
+      // First collect all rows synchronously
+      await new Promise<void>((resolve, reject) => {
+        efs
+          .createReadStream(csvFilePath)
+          .pipe(csvParser())
+          .on('data', (row: CSVRow) => rows.push(row))
+          .on('end', () => resolve())
+          .on('error', reject);
       });
 
-      this.log(`Response: ${JSON.stringify(response.data)}`);
-      this.log(`Uploaded: ${rows.length} files`);
-      this.log('File import completed.');
-      return { message: 'File import completed.', success: true } as FileImportResult;
-    } catch (err) {
-      this.log('Failed to process chunk', err);
-      return { message: 'Failed to process chunk', success: false } as FileImportResult;
+      const batches = await FileImport.createBatches(rows, batchSizeBytes);
+      this.progressBar.start(batches.flat().length, 0);
+
+      const uploadTasks = batches.map((batch) => concurrencyLimit(() => this.processBatch(batch)));
+
+      const batchResults = await Promise.all(uploadTasks);
+      const finalResult = batchResults.reduce((acc, curr) => ({
+        total: acc.total + curr.total,
+        success: acc.success + curr.success,
+        failures: [...acc.failures, ...curr.failures],
+      }));
+
+      this.progressBar.stop();
+      this.log('File import completed');
+      this.log(
+        `Total: ${finalResult.total}, Success: ${finalResult.success}, Failures: ${finalResult.failures.length}`
+      );
+      if (finalResult.failures.length > 0) {
+        this.log(JSON.stringify(finalResult.failures, null, 2));
+      }
+      return finalResult;
+    } catch (error) {
+      this.progressBar.stop();
+      throw error;
     }
+  }
+
+  private async processBatch(batch: CSVRow[]): Promise<FileImportResult> {
+    const results: UploadResult[] = [];
+    const conn = this.targetOrg.getConnection(this.apiVersion);
+    const formData = new FormData();
+
+    const records: ContentVersionRequest[] = [];
+    const binaryParts = await Promise.all(
+      batch.map(async (row) => {
+        const partName = uuidv4();
+        const filePath = row.VersionData;
+
+        records.push({
+          attributes: {
+            type: 'ContentVersion',
+            binaryPartName: partName,
+            binaryPartNameAlias: 'VersionData',
+          },
+          Title: row.Title,
+          PathOnClient: row.PathOnClient,
+        });
+
+        return {
+          partName,
+          filePath,
+          size: (await fs.stat(filePath)).size,
+        };
+      })
+    );
+
+    try {
+      formData.append('collection', JSON.stringify({ allOrNone: false, records }), { contentType: 'application/json' });
+
+      // Add files to form data
+      await Promise.all(
+        binaryParts.map(({ partName, filePath, size }) => {
+          formData.append(partName, efs.createReadStream(filePath), {
+            filename: path.basename(filePath),
+            knownLength: size,
+          });
+        })
+      );
+
+      const response: AxiosResponse = await axios.post(
+        `${conn.instanceUrl}/services/data/v${this.apiVersion}/composite/sobjects`,
+        formData,
+        {
+          headers: {
+            ...formData.getHeaders(),
+            Authorization: `Bearer ${conn.accessToken}`,
+          },
+          maxBodyLength: 50 * 1024 * 1024, // 50MB
+          maxContentLength: 50 * 1024 * 1024,
+        }
+      );
+
+      // Process results
+      response.data.forEach((result, index) => {
+        if (result.success) {
+          results.push({ success: true, title: batch[index].Title });
+        } else {
+          results.push({
+            success: false,
+            title: batch[index].Title,
+            error: result.errors.join(', '),
+          });
+        }
+        this.progressBar.increment();
+      });
+    } catch (error) {
+      // Mark entire batch as failed
+      batch.forEach((row) => {
+        results.push({
+          success: false,
+          title: row.Title,
+          error: (error as Error).message,
+        });
+        this.progressBar.increment();
+      });
+    }
+
+    return {
+      total: batch.length,
+      success: results.filter((r) => r.success).length,
+      failures: results.filter((r) => !r.success),
+    };
   }
 }

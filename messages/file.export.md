@@ -41,3 +41,12 @@ Avoid spaces and special characters in the column name. The default value is `Id
 # examples
 
 - <%= config.bin %> <%= command.id %> --file contentversion-ids.csv
+
+# flags.ext-col-name.summary
+
+File extension column name.
+
+# flags.ext-col-name.description
+
+Name of the column in the csv file containing the file extension. If specified, the
+downloaded file will be named <fileid>.<extension>. If not, it will just be named <file id>
