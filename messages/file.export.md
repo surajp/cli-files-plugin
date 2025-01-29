@@ -48,5 +48,4 @@ File extension column name.
 
 # flags.ext-col-name.description
 
-Name of the column in the csv file containing the file extension. If specified, the
-downloaded file will be named <fileid>.<extension>. If not, it will just be named <file id>
+Name of the column in the csv file containing the file extension. The column may contain just the extension (eg: pdf, jpeg, etc.) or filename including extension (eg: AnnualReport.pdf). If specified, the downloaded file will be named <fileid>.<extension>. If not, it will just be named <file id>
