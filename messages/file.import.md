@@ -20,7 +20,7 @@ The total size of files (in MB) to import in a single batch. (a single composite
 
 # flags.batch-size.description
 
-The default value is 30MB. Reduce this value if you have a large number of small files to import to avoid hitting the limit of 200 records per subrequest.
+The default value is 30MB. Irrespective of the batch size, the program will ensure there are no more than 190 files in a single batch to stay within the composite api subrequests limit of 200.
 
 # flags.concurrency.summary
 

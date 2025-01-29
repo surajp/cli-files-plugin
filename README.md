@@ -88,7 +88,7 @@ USAGE
 FLAGS
   -f, --file=file  (required) The file containing contentversion ids.
   -c, --concurrency=concurrency  The number of concurrent requests to make to the Salesforce API.
-  -b, --batch-size=batch-size  The total size of files to import in a single batch. (a single composite api call)
+  -b, --batch-size=batch-size  The total size of files to import in a single batch. (a single composite api call). Irrespective of the batch size, the program will ensure there are no more than 190 files in a single batch to stay within the composite api subrequests limit of 200.
   -o, --target-org=target-org  The target org to export the files from.
 
 GLOBAL FLAGS

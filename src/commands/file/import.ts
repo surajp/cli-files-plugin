@@ -11,6 +11,7 @@ import pLimit from 'p-limit';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('@neatflow/fileops', 'file.import');
+const MAX_SUBREQUESTS = 190; // composite api can have max 200 subrequests. We reduce it by 10 to be safe
 
 type Result = {
   success: boolean;
@@ -86,6 +87,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
     const batches: CSVRow[][] = [];
     let currentBatch: CSVRow[] = [];
     let currentBatchSize = 0;
+    let currentBatchFiles = 0;
 
     await Promise.all(
       rows.map(async (row) => {
@@ -93,14 +95,17 @@ export default class FileImport extends SfCommand<FileImportResult> {
           const fileStats = await fs.stat(row.VersionData);
           const fileSize = fileStats.size;
 
-          if (fileSize + currentBatchSize > maxBatchSize) {
+          if (fileSize + currentBatchSize > maxBatchSize || currentBatchFiles >= MAX_SUBREQUESTS) {
+            // one composite request can have max 200 subrequests
             batches.push(currentBatch);
             currentBatch = [];
             currentBatchSize = 0;
+            currentBatchFiles = 0;
           }
 
           currentBatch.push(row);
           currentBatchSize += fileSize;
+          currentBatchFiles++;
         } catch (error) {
           throw new Error(`Error processing file ${row.VersionData}: ${(error as Error).message}`);
         }
@@ -111,6 +116,27 @@ export default class FileImport extends SfCommand<FileImportResult> {
       batches.push(currentBatch);
     }
     return batches;
+  }
+
+  private static getContentTypeFromFileName(fileName: string): string {
+    const ext = path.extname(fileName).toLowerCase();
+    switch (ext) {
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg';
+      case '.png':
+        return 'image/png';
+      case '.pdf':
+        return 'application/pdf';
+      case '.txt':
+        return 'text/plain';
+      case '.csv':
+        return 'text/csv';
+      case '.zip':
+        return 'application/zip';
+      default:
+        return 'application/octet-stream';
+    }
   }
 
   public async run(): Promise<FileImportResult> {
@@ -169,35 +195,37 @@ export default class FileImport extends SfCommand<FileImportResult> {
     const apiVersion = conn.getApiVersion();
 
     const records: ContentVersionRequest[] = [];
-    const binaryParts = await Promise.all(
-      batch.map((row) => {
-        const partName = uuidv4();
-        const filePath = row.VersionData;
+    const binaryParts = batch.map((row) => {
+      const partName = uuidv4();
 
-        records.push({
-          attributes: {
-            type: 'ContentVersion',
-            binaryPartName: partName,
-            binaryPartNameAlias: 'VersionData',
-          },
-          Title: row.Title,
-          PathOnClient: row.PathOnClient,
-        });
+      records.push({
+        attributes: {
+          type: 'ContentVersion',
+          binaryPartName: partName,
+          binaryPartNameAlias: 'VersionData',
+        },
+        Title: row.Title,
+        PathOnClient: row.PathOnClient,
+      });
 
-        return {
-          partName,
-          filePath,
-        };
-      })
-    );
+      return {
+        partName,
+        versionData: row.VersionData,
+        filePath: row.PathOnClient,
+        contentType: FileImport.getContentTypeFromFileName(row.PathOnClient),
+      };
+    });
 
     try {
       formData.append('collection', JSON.stringify({ allOrNone: false, records }), { contentType: 'application/json' });
 
       // Add files to form data
       await Promise.all(
-        binaryParts.map(({ partName, filePath }) => {
-          formData.append(partName, efs.createReadStream(filePath), path.basename(filePath));
+        binaryParts.map(({ partName, versionData, filePath, contentType }) => {
+          formData.append(partName, efs.createReadStream(versionData), {
+            filename: path.basename(filePath),
+            contentType,
+          });
         })
       );
 
@@ -222,12 +250,10 @@ export default class FileImport extends SfCommand<FileImportResult> {
             title: batch[index].Title,
             error: result.errors.join(', '),
           });
-          this.log(`Failed to upload ${batch[index].Title}: ${result.errors.join(', ')}`);
         }
         this.progress.update(this.totalProcessed++);
       });
     } catch (error) {
-      // Mark entire batch as failed
       batch.forEach((row) => {
         results.push({
           success: false,
