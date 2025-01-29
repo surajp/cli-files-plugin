@@ -170,7 +170,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
 
     const records: ContentVersionRequest[] = [];
     const binaryParts = await Promise.all(
-      batch.map(async (row) => {
+      batch.map((row) => {
         const partName = uuidv4();
         const filePath = row.VersionData;
 
@@ -187,7 +187,6 @@ export default class FileImport extends SfCommand<FileImportResult> {
         return {
           partName,
           filePath,
-          size: (await fs.stat(filePath)).size,
         };
       })
     );
@@ -197,11 +196,8 @@ export default class FileImport extends SfCommand<FileImportResult> {
 
       // Add files to form data
       await Promise.all(
-        binaryParts.map(({ partName, filePath, size }) => {
-          formData.append(partName, efs.createReadStream(filePath), {
-            filename: path.basename(filePath),
-            knownLength: size,
-          });
+        binaryParts.map(({ partName, filePath }) => {
+          formData.append(partName, efs.createReadStream(filePath), path.basename(filePath));
         })
       );
 
@@ -213,8 +209,6 @@ export default class FileImport extends SfCommand<FileImportResult> {
             ...formData.getHeaders(),
             Authorization: `Bearer ${conn.accessToken}`,
           },
-          maxBodyLength: 50 * 1024 * 1024, // 50MB
-          maxContentLength: 50 * 1024 * 1024,
         }
       );
 
@@ -228,6 +222,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
             title: batch[index].Title,
             error: result.errors.join(', '),
           });
+          this.log(`Failed to upload ${batch[index].Title}: ${result.errors.join(', ')}`);
         }
         this.progress.update(this.totalProcessed++);
       });
