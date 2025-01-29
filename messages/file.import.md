@@ -1,10 +1,10 @@
 # summary
 
-Summary of a command.
+Import ContentVersion records into Salesforce, in bulk.
 
 # description
 
-More information about a command. Don't repeat the summary.
+The command uses composite api and concurrent batches to speed up the upload process. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object.
 
 # flags.file.summary
 

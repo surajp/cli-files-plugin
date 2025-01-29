@@ -1,5 +1,5 @@
 {
-  "name": "file-export",
+  "name": "fileops",
   "description": "Export Salesforce files",
   "version": "1.0.0",
   "dependencies": {

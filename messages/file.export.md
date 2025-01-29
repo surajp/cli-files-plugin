@@ -1,10 +1,10 @@
 # summary
 
-Summary of a command.
+Export binary data for ContentVersion records (Files) from Salesforce
 
 # description
 
-More information about a command. Don't repeat the summary.
+The command uses concurrent processes to speed up the export process. The input csv file should contain the ContentVersion Ids to be exported.
 
 # flags.file.summary
 
