@@ -65,7 +65,8 @@ export default class FileImport extends SfCommand<FileImportResult> {
       exists: true,
     }),
     'batch-size': Flags.integer({
-      summary: 'Maximum batch size in MB',
+      summary: messages.getMessage('flags.batch-size.summary'),
+      description: messages.getMessage('flags.batch-size.description'),
       char: 'b',
       default: 30,
     }),

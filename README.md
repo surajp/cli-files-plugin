@@ -45,10 +45,11 @@ sf plugins
 <!-- commands -->
 
 - [`sf file export`](#sf-file-export)
+- [`sf file import`](#sf-file-import)
 
 ## `sf file export`
 
-Export files' binary data from Salesforce.
+Export files' binary data from Salesforce. The input csv file should contain the ContentVersion Ids to be exported.
 
 ```
 USAGE
@@ -58,7 +59,7 @@ FLAGS
   -f, --file=file  (required) The file containing contentversion ids.
   -d, --output-dir=output-dir  (required) The directory to save the exported contentversion files. The path may be absolute or relative to the current working directory.
   -c, --concurrency=concurrency  The number of concurrent requests to make to the Salesforce API.
-  -e, --ext-col-name=ext-col-name  File extension column name.
+  -e, --ext-col-name=ext-col-name  File extension column name. This can be just the extension or the full filename, including the extension. If specified, the file will be named <fileid>.<extension>. If not, it will just be named <file id>.
   -i, --id=id  Name of the column in the CSV file that contains the ContentVersion Ids. The default value is `Id`.
   -o, --target-org=target-org  The target org to export the files from.
 
@@ -74,6 +75,34 @@ EXAMPLES
 
   Increase concurrency to speed up the export process.
     $ sf file export --file contentversion-ids.csv --concurrency 10
+```
+
+## `sf file import`
+
+Import files into Salesforce as ContentVersion records. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object.
+
+```
+USAGE
+  $ sf file import --file <file> [--concurrency <concurrency>] [--target-org <target-org>]
+
+FLAGS
+  -f, --file=file  (required) The file containing contentversion ids.
+  -c, --concurrency=concurrency  The number of concurrent requests to make to the Salesforce API.
+  -b, --batch-size=batch-size  The total size of files to import in a single batch. (a single composite api call)
+  -o, --target-org=target-org  The target org to export the files from.
+
+GLOBAL FLAGS
+  --json  Format output as json.
+
+DESCRIPTION
+  Import files into Salesforce in bulk.
+
+EXAMPLES
+   Import files into Salesforce from the data in filesToImport.csv.
+    $ sf file import --file filesToImport.csv
+
+  Decrease batch size and increase concurrency to potentially speed up the import process.
+    $ sf file import --file filesToImport.csv --batch-size 10 --concurrency 10
 ```
 
 <!-- commandsstop -->
