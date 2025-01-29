@@ -8,7 +8,6 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { v4 as uuidv4 } from 'uuid';
 import pLimit from 'p-limit';
-import { SingleBar, Presets } from 'cli-progress';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('file-export', 'file.import');
@@ -76,13 +75,11 @@ export default class FileImport extends SfCommand<FileImportResult> {
       default: 3,
     }),
     'target-org': Flags.requiredOrg(),
-    'api-version': Flags.orgApiVersion(),
   };
 
   protected static requiresUsername = true;
   private targetOrg!: Org;
-  private apiVersion!: string;
-  private progressBar!: SingleBar;
+  private totalProcessed: number = 0;
 
   private static async createBatches(rows: CSVRow[], maxBatchSize: number): Promise<CSVRow[][]> {
     const batches: CSVRow[][] = [];
@@ -118,19 +115,10 @@ export default class FileImport extends SfCommand<FileImportResult> {
   public async run(): Promise<FileImportResult> {
     const { flags } = await this.parse(FileImport);
     this.targetOrg = flags['target-org'];
-    this.apiVersion = flags['api-version'] ?? this.targetOrg.getConnection().getApiVersion();
     const batchSizeBytes = flags['batch-size'] * 1024 * 1024;
     const concurrencyLimit = pLimit(flags.concurrency);
 
     const csvFilePath = flags.file;
-
-    this.progressBar = new SingleBar(
-      {
-        format: 'Uploading {bar} {percentage}% | {value}/{total} files',
-        hideCursor: true,
-      },
-      Presets.shades_classic
-    );
 
     try {
       const rows: CSVRow[] = [];
@@ -146,7 +134,8 @@ export default class FileImport extends SfCommand<FileImportResult> {
       });
 
       const batches = await FileImport.createBatches(rows, batchSizeBytes);
-      this.progressBar.start(batches.flat().length, 0);
+      this.progress.start(0, {}, { title: 'Uploading {percentage}% | {value}/{total} files' });
+      this.progress.setTotal(rows.length);
 
       const uploadTasks = batches.map((batch) => concurrencyLimit(() => this.processBatch(batch)));
 
@@ -157,7 +146,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
         failures: [...acc.failures, ...curr.failures],
       }));
 
-      this.progressBar.stop();
+      this.progress.finish();
       this.log('File import completed');
       this.log(
         `Total: ${finalResult.total}, Success: ${finalResult.success}, Failures: ${finalResult.failures.length}`
@@ -167,15 +156,16 @@ export default class FileImport extends SfCommand<FileImportResult> {
       }
       return finalResult;
     } catch (error) {
-      this.progressBar.stop();
+      this.progress.finish();
       throw error;
     }
   }
 
   private async processBatch(batch: CSVRow[]): Promise<FileImportResult> {
     const results: UploadResult[] = [];
-    const conn = this.targetOrg.getConnection(this.apiVersion);
+    const conn = this.targetOrg.getConnection();
     const formData = new FormData();
+    const apiVersion = conn.getApiVersion();
 
     const records: ContentVersionRequest[] = [];
     const binaryParts = await Promise.all(
@@ -215,7 +205,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
       );
 
       const response: AxiosResponse = await axios.post(
-        `${conn.instanceUrl}/services/data/v${this.apiVersion}/composite/sobjects`,
+        `${conn.instanceUrl}/services/data/v${apiVersion}/composite/sobjects`,
         formData,
         {
           headers: {
@@ -238,7 +228,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
             error: result.errors.join(', '),
           });
         }
-        this.progressBar.increment();
+        this.progress.update(this.totalProcessed++);
       });
     } catch (error) {
       // Mark entire batch as failed
@@ -248,7 +238,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
           title: row.Title,
           error: (error as Error).message,
         });
-        this.progressBar.increment();
+        this.progress.update(this.totalProcessed++);
       });
     }
 

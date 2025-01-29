@@ -12,10 +12,9 @@ describe('file export NUTs', () => {
     await session?.clean();
   });
 
-  it('should display provided name', () => {
-    const name = 'World';
-    const command = `file export --name ${name}`;
+  it('should export files with given ids', () => {
+    const command = 'file export --file cvIds.csv --output-dir ./nut-output --target-org mockOrg';
     const output = execCmd(command, { ensureExitCode: 0 }).shellOutput.stdout;
-    expect(output).to.contain(name);
+    expect(output).to.contain('Export complete');
   });
 });

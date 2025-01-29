@@ -87,7 +87,6 @@ describe('file export', () => {
       'output-dir': './output',
       concurrency: 1,
       'target-org': 'mockOrg',
-      'api-version': undefined,
     };
 
     await FileExport.run([
@@ -119,7 +118,6 @@ describe('file export', () => {
       'output-dir': './output',
       concurrency: 1,
       'target-org': 'mockOrg',
-      'api-version': undefined,
     };
 
     try {
@@ -146,7 +144,6 @@ describe('file export', () => {
       'output-dir': './output',
       concurrency: 1,
       'target-org': 'mockOrg',
-      'api-version': undefined,
     };
 
     try {
@@ -167,7 +164,7 @@ describe('file export', () => {
   });
 
   it('should log progress and completion message', async () => {
-    const singleBarIncrement: SinonStub = $$.SANDBOX.stub(SingleBar.prototype, 'increment');
+    const singleBarIncrement: SinonStub = $$.SANDBOX.stub(SingleBar.prototype, 'update');
 
     await FileExport.run([
       '--file',
@@ -208,7 +205,6 @@ describe('file export', () => {
       'output-dir': './output',
       concurrency: 1,
       'target-org': 'mockOrg',
-      'api-version': undefined,
       id: customIdColumn,
     };
 

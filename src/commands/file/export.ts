@@ -6,7 +6,6 @@ import { Messages, Org } from '@salesforce/core';
 import csvParser from 'csv-parser';
 import axios from 'axios';
 import pLimit from 'p-limit';
-import { SingleBar, Presets } from 'cli-progress';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('file-export', 'file.export');
@@ -57,15 +56,12 @@ export default class FileExport extends SfCommand<FileExportResult> {
       char: 'e',
     }),
     'target-org': Flags.requiredOrg(),
-    'api-version': Flags.orgApiVersion(),
   };
 
   protected static requiresUsername = true;
   private targetOrg!: Org;
-  private apiVersion!: string;
   private idFieldName!: string;
   private extColName!: string;
-  private progressBar!: SingleBar;
 
   private static ensureOutputDirectory(outputDir: string): void {
     if (!fs.existsSync(outputDir)) {
@@ -77,7 +73,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
     const { flags } = await this.parse(FileExport);
     const csvFilePath = flags.file;
     this.targetOrg = flags['target-org'];
-    this.apiVersion = flags['api-version'] ?? this.targetOrg.getConnection().getApiVersion();
     this.idFieldName = flags.id;
     this.extColName = flags['ext-col-name'] ?? '';
 
@@ -88,18 +83,9 @@ export default class FileExport extends SfCommand<FileExportResult> {
 
     FileExport.ensureOutputDirectory(outputDir);
 
-    // Initialize progress bar
-    this.progressBar = new SingleBar(
-      {
-        format: 'Progress {bar} {percentage}% | ETA: {eta}s | {value}/{total} files',
-        hideCursor: true,
-      },
-      Presets.shades_classic
-    );
-
     const thePromise: Promise<FileExportResult> = new Promise((resolve, reject) => {
       let totalFiles = 0;
-
+      let downloadCount = 0;
       fs.createReadStream(csvFilePath)
         .pipe(csvParser())
         .on('data', (row: Record<string, string>) => {
@@ -108,19 +94,20 @@ export default class FileExport extends SfCommand<FileExportResult> {
             limit(async () => {
               try {
                 await this.processRow(row, outputDir);
-                this.progressBar.increment();
               } catch (error) {
-                this.progressBar.increment();
                 this.error(`Error processing row: ${(error as Error).message}`);
+              } finally {
+                this.progress.update(++downloadCount);
               }
             })
           );
         })
         .on('end', () => {
-          this.progressBar.start(totalFiles, 0);
+          this.progress.start(0, {}, { title: 'Exporting files' });
+          this.progress.setTotal(totalFiles);
           Promise.allSettled(tasks)
             .then((results) => {
-              this.progressBar.stop();
+              this.progress.finish();
               const successCount = results.filter((r) => r.status === 'fulfilled').length;
               const failureCount = results.filter((r) => r.status === 'rejected').length;
               this.log(`Export complete. ${successCount} files exported successfully, ${failureCount} files failed.`);
@@ -128,12 +115,12 @@ export default class FileExport extends SfCommand<FileExportResult> {
             })
             .then((resp) => resolve(resp))
             .catch((err) => {
-              this.progressBar.stop();
+              this.progress.finish();
               reject(err);
             });
         })
         .on('error', (err) => {
-          this.progressBar.stop();
+          this.progress.finish();
           reject(err);
         });
     });
@@ -155,8 +142,9 @@ export default class FileExport extends SfCommand<FileExportResult> {
         this.error('Missing ContentVersion ID');
       }
 
-      const conn = this.targetOrg.getConnection(this.apiVersion);
-      const fileUrl = `${conn.instanceUrl}/services/data/v${this.apiVersion}/sobjects/ContentVersion/${contentVersionId}/VersionData`;
+      const conn = this.targetOrg.getConnection();
+      const apiVersion = conn.getApiVersion();
+      const fileUrl = `${conn.instanceUrl}/services/data/v${apiVersion}/sobjects/ContentVersion/${contentVersionId}/VersionData`;
 
       const response: AxiosResponse = await axios.get(fileUrl, {
         headers: { Authorization: `Bearer ${conn.accessToken}` },
