@@ -16,7 +16,7 @@ The csv file should atleast have `Title`, `PathOnClient`, `VersionData` columns.
 
 # flags.batch-size.summary
 
-The total size of files to import in a single batch. (a single composite api call)
+The total size of files (in MB) to import in a single batch. (a single composite api call)
 
 # flags.batch-size.description
 
