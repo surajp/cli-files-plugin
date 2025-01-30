@@ -1,7 +1,7 @@
 {
   "name": "@neatflow/fileops",
   "description": "Export/Import Salesforce files",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "dependencies": {
     "@oclif/core": "^4",
     "@salesforce/core": "^8",
