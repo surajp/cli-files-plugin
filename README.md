@@ -79,7 +79,7 @@ EXAMPLES
 
 ## `sf file import`
 
-Import files into Salesforce as ContentVersion records. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object.
+Import files into Salesforce as ContentVersion records. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object.For looking up parent records based on an [idLookup](https://developer.salesforce.com/docs/atlas.en-us.object_reference.meta/object_reference/access_for_fields.htm) field, the column name should be `<LookupField>.ParentFieldName` (eg: Contact\_\_r.Email). For a polymorphic lookup field like `FirstPublishLocationId`, the column name should be `FirstPublishLocation:<ParentObject>.<ParentField>` (eg: FirstPublishLocation:Contact.Email).
 
 ```
 USAGE
@@ -88,7 +88,7 @@ USAGE
 FLAGS
   -f, --file=file  (required) The file containing contentversion ids.
   -c, --concurrency=concurrency  The number of concurrent requests to make to the Salesforce API.
-  -b, --batch-size=batch-size  The total size of files to import in a single batch. (a single composite api call). Irrespective of the batch size, the program will ensure there are no more than 190 files in a single batch to stay within the composite api subrequests limit of 200.
+  -b, --batch-size=batch-size  The total size of files to import in a single batch. (a single composite api call). Irrespective of the batch size, the program will ensure there are no more than 190 files in a single batch to stay within the composite api subrequests limit of 200. The default value is 30MB and maximum value is 40MB.
   -o, --target-org=target-org  The target org to export the files from.
 
 GLOBAL FLAGS

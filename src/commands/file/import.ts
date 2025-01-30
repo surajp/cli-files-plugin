@@ -70,11 +70,15 @@ export default class FileImport extends SfCommand<FileImportResult> {
       description: messages.getMessage('flags.batch-size.description'),
       char: 'b',
       default: 30,
+      max: 40,
+      min: 1,
     }),
     concurrency: Flags.integer({
       summary: 'Number of parallel batches',
       char: 'c',
       default: 3,
+      max: 12,
+      min: 1,
     }),
     'target-org': Flags.requiredOrg(),
   };
@@ -197,6 +201,27 @@ export default class FileImport extends SfCommand<FileImportResult> {
     const records: ContentVersionRequest[] = [];
     const binaryParts = batch.map((row) => {
       const partName = uuidv4();
+      const { VersionData, Title, PathOnClient, ...theRest } = row;
+      const otherProps: Record<string, string | object> = {};
+      for (const [key, value] of Object.entries(theRest)) {
+        if (!key.includes('.')) {
+          otherProps[key] = value;
+          continue;
+        }
+
+        const [fieldNamePart, parentFieldName] = key.split('.');
+        const [fieldName, parentObject] = fieldNamePart.includes(':')
+          ? fieldNamePart.split(':')
+          : [fieldNamePart, null];
+
+        if (parentObject) {
+          otherProps[fieldName] = { attributes: { type: parentObject }, [parentFieldName]: value };
+        } else {
+          otherProps[fieldName] = {
+            [parentFieldName]: value,
+          };
+        }
+      }
 
       records.push({
         attributes: {
@@ -204,15 +229,16 @@ export default class FileImport extends SfCommand<FileImportResult> {
           binaryPartName: partName,
           binaryPartNameAlias: 'VersionData',
         },
-        Title: row.Title,
-        PathOnClient: row.PathOnClient,
+        Title,
+        PathOnClient,
+        ...otherProps,
       });
 
       return {
         partName,
-        versionData: row.VersionData,
-        filePath: row.PathOnClient,
-        contentType: FileImport.getContentTypeFromFileName(row.PathOnClient),
+        versionData: VersionData,
+        filePath: PathOnClient,
+        contentType: FileImport.getContentTypeFromFileName(PathOnClient),
       };
     });
 
@@ -245,6 +271,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
         if (result.success) {
           results.push({ success: true, title: batch[index].Title });
         } else {
+          this.log(`Error processing batch: ${JSON.stringify(result.errors)}`);
           results.push({
             success: false,
             title: batch[index].Title,

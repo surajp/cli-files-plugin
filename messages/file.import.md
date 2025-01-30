@@ -4,7 +4,7 @@ Import ContentVersion records into Salesforce, in bulk.
 
 # description
 
-The command uses composite api and concurrent batches to speed up the upload process. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object.
+The command uses composite api and concurrent batches to speed up the upload process. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object. For looking up parent records based on an `idLookup` field, the column name should be `<LookupField>.ParentFieldName` (eg: Contact\_\_r.Email). For a polymorphic lookup field like `FirstPublishLocationId`, the column name should be `FirstPublishLocation:<ParentObject>.<ParentField>` (eg: FirstPublishLocation:Contact.Email).
 
 # flags.file.summary
 
