@@ -4,10 +4,11 @@ import path from 'node:path';
 import { SfCommand, Flags } from '@salesforce/sf-plugins-core';
 import { Messages, Org } from '@salesforce/core';
 import csvParser from 'csv-parser';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import FormData from 'form-data';
 import { v4 as uuidv4 } from 'uuid';
 import pLimit from 'p-limit';
+import { Parser } from 'json2csv';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
 const messages = Messages.loadMessages('@neatflow/fileops', 'file.import');
@@ -30,10 +31,19 @@ type CSVRow = {
   PathOnClient: string;
 } & Record<string, string>;
 
+type CompositeError = {
+  message: string;
+  statusCode: string;
+  fields: string[];
+};
+
 type UploadResult = {
   success: boolean;
-  title?: string;
+  title: string;
+  versionData: string;
   error?: string;
+  statusText?: string;
+  fields?: string;
 };
 
 export type FileImportResult = {
@@ -143,6 +153,14 @@ export default class FileImport extends SfCommand<FileImportResult> {
     }
   }
 
+  private static async writeFailuresToCsv(failures: UploadResult[]): Promise<string> {
+    const fileName = 'errors' + Date.now() + '.csv';
+    const parser = new Parser();
+    const csv = parser.parse(failures);
+    await fs.writeFile(fileName, csv);
+    return fileName;
+  }
+
   public async run(): Promise<FileImportResult> {
     const { flags } = await this.parse(FileImport);
     this.targetOrg = flags['target-org'];
@@ -168,6 +186,8 @@ export default class FileImport extends SfCommand<FileImportResult> {
       this.progress.start(0, {}, { title: 'Uploading {percentage}% | {value}/{total} files' });
       this.progress.setTotal(rows.length);
 
+      await this.targetOrg.refreshAuth();
+
       const uploadTasks = batches.map((batch) => concurrencyLimit(() => this.processBatch(batch)));
 
       const batchResults = await Promise.all(uploadTasks);
@@ -183,7 +203,9 @@ export default class FileImport extends SfCommand<FileImportResult> {
         `Total: ${finalResult.total}, Success: ${finalResult.success}, Failures: ${finalResult.failures.length}`
       );
       if (finalResult.failures.length > 0) {
-        this.log(JSON.stringify(finalResult.failures, null, 2));
+        this.debug(JSON.stringify(finalResult.failures, null, 2));
+        const errFile = await FileImport.writeFailuresToCsv(finalResult.failures);
+        this.log(`Errors written to ${errFile}`);
       }
       return finalResult;
     } catch (error) {
@@ -269,23 +291,29 @@ export default class FileImport extends SfCommand<FileImportResult> {
       // Process results
       response.data.forEach((result, index) => {
         if (result.success) {
-          results.push({ success: true, title: batch[index].Title });
+          results.push({ success: true, title: batch[index].Title, versionData: batch[index].VersionData });
         } else {
-          this.log(`Error processing batch: ${JSON.stringify(result.errors)}`);
+          const compErr = result.errors[0] as unknown as CompositeError;
           results.push({
             success: false,
             title: batch[index].Title,
-            error: result.errors.join(', '),
+            versionData: batch[index].VersionData,
+            error: compErr.message,
+            statusText: compErr.statusCode,
+            fields: compErr.fields.join('|'),
           });
         }
         this.progress.update(this.totalProcessed++);
       });
     } catch (error) {
       batch.forEach((row) => {
+        const axErr: AxiosError = error as AxiosError;
         results.push({
           success: false,
           title: row.Title,
-          error: (error as Error).message,
+          versionData: row.VersionData,
+          error: axErr.message,
+          statusText: axErr.response?.statusText,
         });
         this.progress.update(this.totalProcessed++);
       });

@@ -82,6 +82,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
     const tasks: Array<Promise<void>> = [];
 
     FileExport.ensureOutputDirectory(outputDir);
+    await this.targetOrg.refreshAuth();
 
     const thePromise: Promise<FileExportResult> = new Promise((resolve, reject) => {
       let totalFiles = 0;
