@@ -49,7 +49,6 @@ type UploadResult = {
 export type FileImportResult = {
   total: number;
   success: number;
-  failures: UploadResult[];
 };
 
 type ContentVersionRequest = {
@@ -96,6 +95,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
   protected static requiresUsername = true;
   private targetOrg!: Org;
   private totalProcessed: number = 0;
+  private errLog: UploadResult[] = [];
 
   private static async createBatches(rows: CSVRow[], maxBatchSize: number): Promise<CSVRow[][]> {
     const batches: CSVRow[][] = [];
@@ -153,20 +153,11 @@ export default class FileImport extends SfCommand<FileImportResult> {
     }
   }
 
-  private static async writeFailuresToCsv(failures: UploadResult[]): Promise<string> {
-    const fileName = 'errors' + Date.now() + '.csv';
-    const parser = new Parser();
-    const csv = parser.parse(failures);
-    await fs.writeFile(fileName, csv);
-    return fileName;
-  }
-
   public async run(): Promise<FileImportResult> {
     const { flags } = await this.parse(FileImport);
     this.targetOrg = flags['target-org'];
     const batchSizeBytes = flags['batch-size'] * 1024 * 1024;
     const concurrencyLimit = pLimit(flags.concurrency);
-
     const csvFilePath = flags.file;
 
     try {
@@ -194,24 +185,29 @@ export default class FileImport extends SfCommand<FileImportResult> {
       const finalResult = batchResults.reduce((acc, curr) => ({
         total: acc.total + curr.total,
         success: acc.success + curr.success,
-        failures: [...acc.failures, ...curr.failures],
       }));
 
       this.progress.finish();
       this.log('File import completed');
-      this.log(
-        `Total: ${finalResult.total}, Success: ${finalResult.success}, Failures: ${finalResult.failures.length}`
-      );
-      if (finalResult.failures.length > 0) {
-        this.debug(JSON.stringify(finalResult.failures, null, 2));
-        const errFile = await FileImport.writeFailuresToCsv(finalResult.failures);
-        this.log(`Errors written to ${errFile}`);
-      }
+      this.log(`Total: ${finalResult.total}, Success: ${finalResult.success}, Failures: ${this.errLog.length}`);
+      await this.writeFailuresToCsv();
       return finalResult;
     } catch (error) {
       this.progress.finish();
       throw error;
     }
+  }
+
+  private async writeFailuresToCsv(): Promise<void> {
+    if (this.errLog.length === 0) {
+      return;
+    }
+    this.debug(JSON.stringify(this.errLog, null, 2));
+    const fileName = 'errors' + Date.now() + '.csv';
+    const parser = new Parser();
+    const csv = parser.parse(this.errLog);
+    await fs.writeFile(fileName, csv);
+    this.log(`Errors written to ${fileName}`);
   }
 
   private async processBatch(batch: CSVRow[]): Promise<FileImportResult> {
@@ -294,7 +290,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
           results.push({ success: true, title: batch[index].Title, versionData: batch[index].VersionData });
         } else {
           const compErr = result.errors[0] as unknown as CompositeError;
-          results.push({
+          this.errLog.push({
             success: false,
             title: batch[index].Title,
             versionData: batch[index].VersionData,
@@ -308,7 +304,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
     } catch (error) {
       batch.forEach((row) => {
         const axErr: AxiosError = error as AxiosError;
-        results.push({
+        this.errLog.push({
           success: false,
           title: row.Title,
           versionData: row.VersionData,
@@ -322,7 +318,6 @@ export default class FileImport extends SfCommand<FileImportResult> {
     return {
       total: batch.length,
       success: results.filter((r) => r.success).length,
-      failures: results.filter((r) => !r.success),
     };
   }
 }
