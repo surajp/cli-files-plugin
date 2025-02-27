@@ -132,6 +132,23 @@ export default class FileImport extends SfCommand<FileImportResult> {
     return batches;
   }
 
+  private static fixCSVRowCase(row: Record<string, string>): CSVRow {
+    const props = ['VersionData', 'Title', 'PathOnClient'];
+    const lowerCaseProps = props.map((p) => p.toLowerCase());
+    const ret: CSVRow = { VersionData: '', Title: '', PathOnClient: '' };
+    for (const prop in row) {
+      if (Object.hasOwn(row, prop)) {
+        const index = lowerCaseProps.indexOf(prop.toLowerCase());
+        if (index >= 0) {
+          ret[props[index]] = row[prop];
+        } else {
+          ret[prop] = row[prop];
+        }
+      }
+    }
+    return ret;
+  }
+
   private static getContentTypeFromFileName(fileName: string): string {
     const ext = path.extname(fileName).toLowerCase();
     switch (ext) {
@@ -168,7 +185,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
         efs
           .createReadStream(csvFilePath)
           .pipe(csvParser())
-          .on('data', (row: CSVRow) => rows.push(row))
+          .on('data', (row: Record<string, string>) => rows.push(FileImport.fixCSVRowCase(row)))
           .on('end', () => resolve())
           .on('error', reject);
       });
