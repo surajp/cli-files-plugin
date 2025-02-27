@@ -28,7 +28,6 @@ type CSVError = {
 export type FileExportResult = {
   successCount: number;
   failureCount: number;
-  errorLogPath?: string;
 };
 
 export default class FileExport extends SfCommand<FileExportResult> {
@@ -69,11 +68,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
       char: 'e',
     }),
     'target-org': Flags.requiredOrg(),
-    'error-log': Flags.string({
-      summary: 'Path to error log file',
-      description: 'Specify a custom path for the error log file',
-      default: 'file-export-errors.log',
-    }),
   };
 
   protected static requiresUsername = true;
@@ -81,7 +75,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
   private idFieldName!: string;
   private extColName!: string;
   private errorLog: CSVError[] = [];
-  private errorLogPath!: string;
 
   private static ensureOutputDirectory(outputDir: string): void {
     if (!fs.existsSync(outputDir)) {
@@ -108,7 +101,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
     this.targetOrg = flags['target-org'];
     this.idFieldName = flags.id;
     this.extColName = flags['ext-col-name'] ?? '';
-    this.errorLogPath = path.resolve(flags['error-log']);
 
     const concurrency = flags.concurrency;
     const outputDir: string = flags['output-dir'];
@@ -172,7 +164,6 @@ export default class FileExport extends SfCommand<FileExportResult> {
               return {
                 successCount,
                 failureCount,
-                errorLogPath: failureCount > 0 ? this.errorLogPath : undefined,
               } as FileExportResult;
             })
             .then((resp) => resolve(resp))
@@ -280,7 +271,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
         response.data.pipe(writer);
       });
     } catch (err) {
-      // Clean up resources in case of error
+      // Clean up resources in case of error so the process doesn't hang
       if (axios.isAxiosError(err)) {
         (err?.response?.data as Readable).destroy();
       }
