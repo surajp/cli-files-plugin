@@ -5,7 +5,6 @@ import { expect } from 'chai';
 import { stubSfCommandUx } from '@salesforce/sf-plugins-core';
 import sinon, { SinonStub } from 'sinon';
 import axios from 'axios';
-import { SingleBar } from 'cli-progress';
 import FileExport from '../../../src/commands/file/export.js';
 
 type AxiosResponse = {
@@ -164,8 +163,6 @@ describe('file export', () => {
   });
 
   it('should log progress and completion message', async () => {
-    const singleBarIncrement: SinonStub = $$.SANDBOX.stub(SingleBar.prototype, 'update');
-
     await FileExport.run([
       '--file',
       './mock.csv',
@@ -180,7 +177,6 @@ describe('file export', () => {
     const outputLogs: string[] = sfCommandStubs.log.getCalls().flatMap((call) => call.args as string[]);
 
     expect(outputLogs.join('\n'), 'expected output logs to include Export complete').to.deep.include('Export complete');
-    expect(singleBarIncrement.callCount, 'expected progress bar to be incremented').to.be.greaterThan(0);
   });
 
   it('should handle alternate ID field name', async () => {

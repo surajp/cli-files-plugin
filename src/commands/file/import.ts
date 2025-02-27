@@ -279,7 +279,7 @@ export default class FileImport extends SfCommand<FileImportResult> {
         {
           headers: {
             ...formData.getHeaders(),
-            Authorization: `Bearer ${conn.accessToken}`,
+            Authorization: `Bearer ${conn.accessToken ?? ''}`,
           },
         }
       );

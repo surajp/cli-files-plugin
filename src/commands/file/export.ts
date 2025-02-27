@@ -197,7 +197,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
 
     if (details) {
       if (axios.isAxiosError(details)) {
-        errorMessage.status = details.response?.status + '' ?? 'unknown';
+        errorMessage.status = (details.response?.status ?? 'unknown') + '';
         errorMessage.statusText = details.response?.statusText ?? 'unknown';
         errorMessage.url = details.config?.url ?? 'unknown';
       } else if (details instanceof Error) {
@@ -246,7 +246,7 @@ export default class FileExport extends SfCommand<FileExportResult> {
 
     try {
       response = await axios.get(fileUrl, {
-        headers: { Authorization: `Bearer ${conn.accessToken}` },
+        headers: { Authorization: `Bearer ${conn.accessToken ?? ''}` },
         responseType: 'stream',
         timeout: 30000, // 30 second timeout
       });
