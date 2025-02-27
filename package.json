@@ -51,7 +51,7 @@
       "@oclif/plugin-help"
     ],
     "topics": {
-      "file": {
+      "fileops": {
         "description": "Commands to export and import Salesforce files"
       }
     },

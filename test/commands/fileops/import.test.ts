@@ -6,7 +6,7 @@ import { stubSfCommandUx } from '@salesforce/sf-plugins-core';
 import { SinonStub } from 'sinon';
 import axios from 'axios';
 import FormData from 'form-data';
-import FileImport from '../../../src/commands/file/import.js';
+import FileImport from '../../../src/commands/fileops/import.js';
 
 type AxiosResponse = {
   data: string;

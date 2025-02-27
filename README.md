@@ -28,7 +28,7 @@ To use your plugin, run using the local `./bin/dev` or `./bin/dev.cmd` file.
 
 ```bash
 # Run using local run file.
-./bin/dev file export
+./bin/dev fileops export
 ```
 
 There should be no differences when running via the Salesforce CLI or using the local run file. However, it can be useful to link the plugin to do some additional testing or run your commands from anywhere on your machine.
@@ -44,16 +44,16 @@ sf plugins
 
 <!-- commands -->
 
-- [`sf file export`](#sf-file-export)
-- [`sf file import`](#sf-file-import)
+- [`sf fileops export`](#sf-fileops-export)
+- [`sf fileops import`](#sf-fileops-import)
 
-## `sf file export`
+## `sf fileops export`
 
 Export binary data for ContentVersion records (Files) from Salesforce
 
 ```
 USAGE
-  $ sf file export -f <value> -d <value> -o <value> [--json] [--flags-dir <value>] [-c <value>] [-i <value>] [-e
+  $ sf fileops export -f <value> -d <value> -o <value> [--json] [--flags-dir <value>] [-c <value>] [-i <value>] [-e
     <value>]
 
 FLAGS
@@ -77,7 +77,7 @@ DESCRIPTION
   ContentVersion Ids to be exported.
 
 EXAMPLES
-  $ sf file export --file contentversion-ids.csv
+  $ sf fileops export --file contentversion-ids.csv
 
 FLAG DESCRIPTIONS
   -c, --concurrency=<value>  The number of concurrent requests to make to the Salesforce API.
@@ -105,13 +105,13 @@ FLAG DESCRIPTIONS
     columns, but they will be ignored.
 ```
 
-## `sf file import`
+## `sf fileops import`
 
 Import ContentVersion records into Salesforce, in bulk.
 
 ```
 USAGE
-  $ sf file import -f <value> -o <value> [--json] [--flags-dir <value>] [-b <value>] [-c <value>]
+  $ sf fileops import -f <value> -o <value> [--json] [--flags-dir <value>] [-b <value>] [-c <value>]
 
 FLAGS
   -b, --batch-size=<value>   [default: 30] The total size of files (in MB) to import in a single batch. (a single
@@ -137,7 +137,7 @@ DESCRIPTION
   FirstPublishLocation:Contact.Email).
 
 EXAMPLES
-  $ sf file import
+  $ sf fileops import
 
 FLAG DESCRIPTIONS
   -b, --batch-size=<value>

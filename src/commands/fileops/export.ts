@@ -9,7 +9,7 @@ import pLimit from 'p-limit';
 import { Parser } from 'json2csv';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
-const messages = Messages.loadMessages('@neatflow/fileops', 'file.export');
+const messages = Messages.loadMessages('@neatflow/fileops', 'fileops.export');
 
 type AxiosResponse = {
   data: Readable;

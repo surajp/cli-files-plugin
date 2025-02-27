@@ -5,7 +5,7 @@ import { expect } from 'chai';
 import { stubSfCommandUx } from '@salesforce/sf-plugins-core';
 import sinon, { SinonStub } from 'sinon';
 import axios from 'axios';
-import FileExport from '../../../src/commands/file/export.js';
+import FileExport from '../../../src/commands/fileops/export.js';
 
 type AxiosResponse = {
   data: Readable;

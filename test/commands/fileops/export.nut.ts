@@ -13,7 +13,7 @@ describe('file export NUTs', () => {
   });
 
   it('should export files with given ids', () => {
-    const command = 'file export --file cvIds.csv --output-dir ./nut-output --target-org mockOrg';
+    const command = 'fileops export --file cvIds.csv --output-dir ./nut-output --target-org mockOrg';
     const output = execCmd(command, { ensureExitCode: 0 }).shellOutput.stdout;
     expect(output).to.contain('Export complete');
   });

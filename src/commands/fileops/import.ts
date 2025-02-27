@@ -11,7 +11,7 @@ import pLimit from 'p-limit';
 import { Parser } from 'json2csv';
 
 Messages.importMessagesDirectoryFromMetaUrl(import.meta.url);
-const messages = Messages.loadMessages('@neatflow/fileops', 'file.import');
+const messages = Messages.loadMessages('@neatflow/fileops', 'fileops.import');
 const MAX_SUBREQUESTS = 190; // composite api can have max 200 subrequests. We reduce it by 10 to be safe
 
 type Result = {

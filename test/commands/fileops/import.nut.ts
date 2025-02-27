@@ -13,8 +13,8 @@ describe('file import NUTs', () => {
   });
 
   it('should display provided name', () => {
-    const name = 'World';
-    const command = `file import --name ${name}`;
+    const name = 'World.csv';
+    const command = `fileops import --file ${name}`;
     const output = execCmd(command, { ensureExitCode: 0 }).shellOutput.stdout;
     expect(output).to.contain(name);
   });
