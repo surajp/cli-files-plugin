@@ -49,60 +49,109 @@ sf plugins
 
 ## `sf file export`
 
-Export files' binary data from Salesforce. The input csv file should contain the ContentVersion Ids to be exported.
+Export binary data for ContentVersion records (Files) from Salesforce
 
 ```
 USAGE
-  $ sf file export --file <file> --output-dir <output-dir> [--concurrency <concurrency>] [--ext-col-name <ext-col-name>] [--id <id>] [--target-org <target-org>]
+  $ sf file export -f <value> -d <value> -o <value> [--json] [--flags-dir <value>] [-c <value>] [-i <value>] [-e
+    <value>]
 
 FLAGS
-  -f, --file=file  (required) The file containing contentversion ids.
-  -d, --output-dir=output-dir  (required) The directory to save the exported contentversion files. The path may be absolute or relative to the current working directory.
-  -c, --concurrency=concurrency  The number of concurrent requests to make to the Salesforce API.
-  -e, --ext-col-name=ext-col-name  File extension column name. This can be just the extension or the full filename, including the extension. If specified, the file will be named <fileid>.<extension>. If not, it will just be named <file id>.
-  -i, --id=id  Name of the column in the CSV file that contains the ContentVersion Ids. The default value is `Id`.
-  -o, --target-org=target-org  The target org to export the files from.
+  -c, --concurrency=<value>   [default: 3] The number of concurrent requests to make to the Salesforce API.
+  -d, --output-dir=<value>    (required) The directory to save the exported contentversion files. The path may be
+                              absolute or relative to the current working directory.
+  -e, --ext-col-name=<value>  File extension column name.
+  -f, --file=<value>          (required) The file containing contentversion ids.
+  -i, --id=<value>            [default: Id] Name of the column in the CSV file that contains the ContentVersion Ids.
+  -o, --target-org=<value>    (required) Username or alias of the target org. Not required if the `target-org`
+                              configuration variable is already set.
 
 GLOBAL FLAGS
-  --json  Format output as json.
+  --flags-dir=<value>  Import flag values from a directory.
+  --json               Format output as json.
 
 DESCRIPTION
-  Export files' binary data from Salesforce.
+  Export binary data for ContentVersion records (Files) from Salesforce
+
+  The command uses concurrent processes to speed up the export process. The input csv file should contain the
+  ContentVersion Ids to be exported.
 
 EXAMPLES
-   Export files' binary data from Salesforce for the contentversion ids in the file contentversion-ids.csv.
-    $ sf file export --file contentversion-ids.csv
+  $ sf file export --file contentversion-ids.csv
 
-  Increase concurrency to speed up the export process.
-    $ sf file export --file contentversion-ids.csv --concurrency 10
+FLAG DESCRIPTIONS
+  -c, --concurrency=<value>  The number of concurrent requests to make to the Salesforce API.
+
+    More concurrent requests will be faster but may cause the Salesforce API to return errors and throttle system
+    resources.
+
+  -d, --output-dir=<value>
+
+    The directory to save the exported contentversion files. The path may be absolute or relative to the current working
+    directory.
+
+    The directory will be created if it does not exist. The exported files will be saved in the directory with the Id as
+    the filename. If using an existing directory, any files with the same name will be overwritten.
+
+  -e, --ext-col-name=<value>  File extension column name.
+
+    Name of the column in the csv file containing the file extension. The column may contain just the extension (eg:
+    pdf, jpeg, etc.) or filename including extension (eg: AnnualReport.pdf). If specified, the downloaded file will be
+    named <fileid>.<extension>. If not, it will just be named <file id>
+
+  -f, --file=<value>  The file containing contentversion ids.
+
+    The csv file should have a column `Id` with the contentversion ids to be exported. The file may contain additional
+    columns, but they will be ignored.
 ```
 
 ## `sf file import`
 
-Import files into Salesforce as ContentVersion records. The input csv file should contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the path to the file to be imported. Any additional columns should exactly match the field api name of a standard or custom field on the ContentVersion object.For looking up parent records based on an [idLookup](https://developer.salesforce.com/docs/atlas.en-us.object_reference.meta/object_reference/access_for_fields.htm) field, the column name should be `<LookupField>.ParentFieldName` (eg: Contact\_\_r.Email). For a polymorphic lookup field like `FirstPublishLocationId`, the column name should be `FirstPublishLocation:<ParentObject>.<ParentField>` (eg: FirstPublishLocation:Contact.Email).
+Import ContentVersion records into Salesforce, in bulk.
 
 ```
 USAGE
-  $ sf file import --file <file> [--concurrency <concurrency>] [--target-org <target-org>]
+  $ sf file import -f <value> -o <value> [--json] [--flags-dir <value>] [-b <value>] [-c <value>]
 
 FLAGS
-  -f, --file=file  (required) The file containing contentversion ids.
-  -c, --concurrency=concurrency  The number of concurrent requests to make to the Salesforce API.
-  -b, --batch-size=batch-size  The total size of files to import in a single batch. (a single composite api call). Irrespective of the batch size, the program will ensure there are no more than 190 files in a single batch to stay within the composite api subrequests limit of 200. The default value is 30MB and maximum value is 40MB.
-  -o, --target-org=target-org  The target org to export the files from.
+  -b, --batch-size=<value>   [default: 30] The total size of files (in MB) to import in a single batch. (a single
+                             composite api call)
+  -c, --concurrency=<value>  [default: 3] Number of parallel batches
+  -f, --file=<value>         (required) The file containing ContentVersion data to be imported.
+  -o, --target-org=<value>   (required) Username or alias of the target org. Not required if the `target-org`
+                             configuration variable is already set.
 
 GLOBAL FLAGS
-  --json  Format output as json.
+  --flags-dir=<value>  Import flag values from a directory.
+  --json               Format output as json.
 
 DESCRIPTION
-  Import files into Salesforce in bulk.
+  Import ContentVersion records into Salesforce, in bulk.
+
+  The command uses composite api and concurrent batches to speed up the upload process. The input csv file should
+  contain the following columns: `Title`, `PathOnClient`, `VersionData`. The `VersionData` column should contain the
+  path to the file to be imported. Any additional columns should exactly match the field api name of a standard or
+  custom field on the ContentVersion object. For looking up parent records based on an `idLookup` field, the column name
+  should be `<LookupField>.ParentFieldName` (eg: Contact\_\_r.Email). For a polymorphic lookup field like
+  `FirstPublishLocationId`, the column name should be `FirstPublishLocation:<ParentObject>.<ParentField>` (eg:
+  FirstPublishLocation:Contact.Email).
 
 EXAMPLES
-   Import files into Salesforce from the data in filesToImport.csv.
-    $ sf file import --file filesToImport.csv
+  $ sf file import
 
-  Decrease batch size and increase concurrency to potentially speed up the import process.
-    $ sf file import --file filesToImport.csv --batch-size 10 --concurrency 10
+FLAG DESCRIPTIONS
+  -b, --batch-size=<value>
+
+    The total size of files (in MB) to import in a single batch. (a single composite api call)
+
+    The default value is 30MB. Irrespective of the batch size, the program will ensure there are no more than 190 files
+    in a single batch to stay within the composite api subrequests limit of 200.
+
+  -f, --file=<value>  The file containing ContentVersion data to be imported.
+
+    The csv file should atleast have `Title`, `PathOnClient`, `VersionData` columns. VersionData should be the path to
+    the file to be imported. Any additional columns should exactly match the field api name of a standard or custom
+    field on the ContentVersion object.
 ```
 
 <!-- commandsstop -->
