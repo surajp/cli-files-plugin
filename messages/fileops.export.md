@@ -1,38 +1,30 @@
 # summary
 
-Export binary data for ContentVersion records (Files) from Salesforce
+Exports binary data for ContentVersion records (Files) from Salesforce using the Composite Batch API.
 
 # description
 
-The command uses concurrent processes to speed up the export process. The input csv file should contain the ContentVersion Ids to be exported.
+The command efficiently exports multiple files from Salesforce by processing ContentVersion records in batches using the Composite Batch API. Provide a CSV file containing the ContentVersion Ids to be exported.
 
 # flags.file.summary
 
-The file containing contentversion ids.
+The file containing ContentVersion IDs.
 
 # flags.file.description
 
-The csv file should have a column `Id` with the contentversion ids to be exported. The file may contain additional columns, but they will be ignored.
+The CSV file should have a column (default 'Id', configurable with --id) with the ContentVersion IDs to be exported. The file may contain additional columns, but they will be ignored unless specified (e.g., for file extensions via --ext-col-name).
 
 # flags.output-dir.summary
 
-The directory to save the exported contentversion files. The path may be absolute or relative to the current working directory.
+The directory to save the exported ContentVersion files.
 
 # flags.output-dir.description
 
-The directory will be created if it does not exist. The exported files will be saved in the directory with the Id as the filename. If using an existing directory, any files with the same name will be overwritten.
-
-# flags.concurrency.summary
-
-The number of concurrent requests to make to the Salesforce API.
-
-# flags.concurrency.description
-
-More concurrent requests will be faster but may cause the Salesforce API to return errors and throttle system resources.
+The path may be absolute or relative to the current working directory. The directory will be created if it does not exist. The exported files will be saved in the directory with the Id as the filename (plus extension, if provided). If using an existing directory, any files with the same name will be overwritten.
 
 # flags.id.summary
 
-Name of the column in the CSV file that contains the ContentVersion Ids.
+Name of the column in the CSV file that contains the ContentVersion IDs.
 
 # flags.id.description
 
@@ -40,12 +32,13 @@ Avoid spaces and special characters in the column name. The default value is `Id
 
 # examples
 
-- <%= config.bin %> <%= command.id %> --file contentversion-ids.csv
+- <%= config.bin %> <%= command.id %> --file contentversion-ids.csv --output-dir ./exported_files --target-org myorgalias
+- <%= config.bin %> <%= command.id %> --file cv_data.csv --output-dir ./downloads --id DocumentId --ext-col-name Extension --target-org myorgalias
 
 # flags.ext-col-name.summary
 
-File extension column name.
+Name of the column in the CSV file containing the file extension.
 
 # flags.ext-col-name.description
 
-Name of the column in the csv file containing the file extension. The column may contain just the extension (eg: pdf, jpeg, etc.) or filename including extension (eg: AnnualReport.pdf). If specified, the downloaded file will be named <fileid>.<extension>. If not, it will just be named <file id>
+The column may contain just the extension (e.g., pdf, jpeg) or a full filename including the extension (e.g., AnnualReport.pdf, in which case the extension is extracted). If specified, the downloaded file will be named <fileid>.<extension>. If not specified, the downloaded file will be named simply <fileid>.
